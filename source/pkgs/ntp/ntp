@@ -1,0 +1,26 @@
+#!/bin/sh
+
+killproc() {	# kill named processes
+	pid=`/bin/ps |
+		/bin/grep $1 | /bin/grep -v grep |
+		/bin/sed -e 's/^  *//' -e 's/ .*//'`
+	[ "$pid" != "" ] && kill $pid
+}
+
+case "$1" in
+'start')
+	/bin/ps | /bin/grep ntpd | /bin/grep -v grep > /dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+		echo "ntp daemon already running. ntp start aborted"
+		exit 0
+	fi
+	/usr/sbin/ntpd -c /etc/ntp.conf -g
+	;;
+'stop')
+	killproc ntpd
+	;;
+*)
+	echo "Usage: /usr/sbin/ntp { start | stop }"
+	;;
+esac

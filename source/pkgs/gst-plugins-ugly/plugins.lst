@@ -1,0 +1,5 @@
+--disable-amrnb
+--disable-amrwb
+--disable-cdio
+--disable-mad
+--disable-x264

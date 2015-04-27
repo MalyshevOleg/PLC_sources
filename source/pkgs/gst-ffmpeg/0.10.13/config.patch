@@ -1,0 +1,76 @@
+diff -ruN gst-ffmpeg-0.10.13.orig/configure gst-ffmpeg-0.10.13/configure
+--- gst-ffmpeg-0.10.13.orig/configure	2012-10-30 16:34:03.179714401 +0200
++++ gst-ffmpeg-0.10.13/configure	2012-10-30 17:02:21.839982574 +0200
+@@ -9005,6 +9005,9 @@
+   openbsd*)
+     with_gnu_ld=no
+     ;;
++  linux* | k*bsd*-gnu | gnu*)
++    link_all_deplibs=no
++    ;;
+   esac
+ 
+   ld_shlibs=yes
+@@ -9404,6 +9407,7 @@
+ 	if test "$aix_use_runtimelinking" = yes; then
+ 	  shared_flag="$shared_flag "'${wl}-G'
+ 	fi
++	link_all_deplibs=no
+       else
+ 	# not using gcc
+ 	if test "$host_cpu" = ia64; then
+@@ -10673,14 +10677,7 @@
+     *) objformat=elf ;;
+     esac
+   fi
+-  # Handle Gentoo/FreeBSD as it was Linux
+-  case $host_vendor in
+-    gentoo)
+-      version_type=linux ;;
+-    *)
+-      version_type=freebsd-$objformat ;;
+-  esac
+-
++  version_type=freebsd-$objformat
+   case $version_type in
+     freebsd-elf*)
+       library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext} $libname${shared_ext}'
+@@ -10691,12 +10688,6 @@
+       library_names_spec='${libname}${release}${shared_ext}$versuffix $libname${shared_ext}$versuffix'
+       need_version=yes
+       ;;
+-    linux)
+-      library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}$major ${libname}${shared_ext}'
+-      soname_spec='${libname}${release}${shared_ext}$major'
+-      need_lib_prefix=no
+-      need_version=no
+-      ;;
+   esac
+   shlibpath_var=LD_LIBRARY_PATH
+   case $host_os in
+@@ -10726,6 +10717,7 @@
+   library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
+   soname_spec='${libname}${release}${shared_ext}$major'
+   shlibpath_var=LD_LIBRARY_PATH
++  shlibpath_overrides_runpath=no
+   hardcode_into_libs=yes
+   ;;
+ 
+@@ -16708,7 +16700,7 @@
+   fi
+ 
+   # if we are cross-compiling, tell ffmpeg so
+-  target_os=`echo $host_os | sed 's/-gnu//'`
++  target_os=`echo $host_os | sed 's/-gnu\(eabi\)\?//'`
+   if test "x$cross_compiling" = xyes; then
+     embffmpeg_configure_args="$embffmpeg_configure_args --enable-cross-compile \
+         --target-os=$target_os --arch=$host_cpu --cross-prefix=$host_alias-"
+@@ -19260,7 +19252,7 @@
+                if test -z "$srcdir" -o "$srcdir" = .; then
+        confcmd=./configure
+      else
+-       confcmd="$origdir"/"$ac_top_srcdir"/gst-libs/ext/libav/configure
++       confcmd="$ac_abs_top_srcdir"/gst-libs/ext/libav/configure
+      fi
+ 
+      as_dir="$ac_top_build_prefix"gst-libs/ext/libav; as_fn_mkdir_p

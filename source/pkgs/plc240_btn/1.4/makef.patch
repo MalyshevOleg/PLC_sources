@@ -1,0 +1,18 @@
+--- a/Makefile	2011-06-21 20:54:31.000000000 +0300
++++ b/Makefile	2011-06-21 20:42:20.000000000 +0300
+@@ -14,6 +14,9 @@
+ INSTALL=	install
+ STRIP=		$(CROSS_COMPILE)strip
+ 
++SDIR=./
++VPATH=$(SDIR)
++
+ all:		plc240_buttons
+ 
+ 
+@@ -25,4 +28,4 @@
+ 		rm -f *.o *.bak plc240_buttons
+ 
+ install:	plc240_buttons
+-		-test -x plc240_buttons && ${INSTALL} -m755 -o${OWNER} -g${GROUP} -s plc240_buttons ${BINDIR}
++		-test -x plc240_buttons && ${INSTALL} -m 755 -o ${OWNER} -g ${GROUP} plc240_buttons ${BINDIR}

@@ -1,0 +1,11 @@
+--- a/genpowerd.c	2011-01-14 20:29:35.000000000 +0200
++++ b/genpowerd.c	2011-01-20 21:00:25.000000000 +0200
+@@ -259,7 +259,7 @@
+     lseek(fd, 0, SEEK_SET);
+     ret = read(fd, buf, 20);
+ //    printf("%d %s\n",ret,buf);
+-    if (ret == 3)
++    if (ret == 2 || ret == 3)
+ 	return 1;
+     else return 0;
+ }

@@ -1,0 +1,16 @@
+diff -uNr u-boot-2010.03-orig/board/owen/plc240/owen-plc240.c u-boot-2010.03/board/owen/plc240/owen-plc240.c
+--- u-boot-2010.03-orig/board/owen/plc240/owen-plc240.c	2014-06-16 17:58:11.378104957 +0400
++++ u-boot-2010.03/board/owen/plc240/owen-plc240.c	2014-06-16 18:07:47.526139344 +0400
+@@ -281,6 +281,12 @@
+ 	return 0;
+ }
+ 
++
++int usb_board_init_fail()
++{
++	return 0;
++}
++
+ int dram_init(void)
+ {
+ 	gd->bd->bi_dram[0].start = PHYS_SDRAM;

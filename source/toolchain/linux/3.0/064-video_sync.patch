@@ -1,0 +1,68 @@
+diff -uNr linux-3.0_orig/drivers/video/omap2/displays/panel-variscite.c linux-3.0/drivers/video/omap2/displays/panel-variscite.c
+--- linux-3.0_orig/drivers/video/omap2/displays/panel-variscite.c	2014-09-22 15:18:37.887232219 +0400
++++ linux-3.0/drivers/video/omap2/displays/panel-variscite.c	2014-09-22 15:21:54.955244094 +0400
+@@ -35,15 +35,15 @@
+ 		.x_res = 800,
+ 		.y_res = 480,
+ 
+-		.pixel_clock	= 28800,
++		.pixel_clock	= 30000,
+ 
+-		.hsw		= 28,
+-		.hfp		= 29,
+-		.hbp		= 17,
++		.hsw		= 47,
++		.hfp		= 39,
++		.hbp		= 39,
+ 
+-		.vsw		= 3,
++		.vsw		= 2,
+ 		.vfp		= 13,
+-		.vbp		= 20,
++		.vbp		= 29,
+ };
+ 
+ static int UMT_ls_bl_update_status(struct backlight_device *bl)
+diff -uNr linux-3.0_orig/drivers/video/omap2/dss/dispc.c linux-3.0/drivers/video/omap2/dss/dispc.c
+--- linux-3.0_orig/drivers/video/omap2/dss/dispc.c	2014-09-22 15:18:37.859232217 +0400
++++ linux-3.0/drivers/video/omap2/dss/dispc.c	2014-09-22 17:10:38.507631713 +0400
+@@ -33,6 +33,7 @@
+ #include <linux/workqueue.h>
+ #include <linux/hardirq.h>
+ #include <linux/interrupt.h>
++#include  <linux/reboot.h>
+ 
+ #include <plat/sram.h>
+ #include <plat/clock.h>
+@@ -3207,6 +3208,8 @@
+ 	return IRQ_HANDLED;
+ }
+ 
++static int S_L_twice=0;
++
+ static void dispc_error_worker(struct work_struct *work)
+ {
+ 	int i;
+@@ -3277,7 +3280,6 @@
+ 		bool enable = false;
+ 
+ 		DSSERR("SYNC_LOST, disabling LCD\n");
+-
+ 		for (i = 0; i < omap_dss_get_num_overlay_managers(); ++i) {
+ 			struct omap_overlay_manager *mgr;
+ 			mgr = omap_dss_get_overlay_manager(i);
+@@ -3305,10 +3307,13 @@
+ 			}
+ 
+ 			dispc_go(manager->id);
+-			mdelay(50);
++			mdelay(500);
+ 			if (enable)
+ 				dssdev->driver->enable(dssdev);
+ 		}
++		if(S_L_twice++==3)
++		    kernel_restart(NULL);
++		
+ 	}
+ 
+ 	if (errors & DISPC_IRQ_SYNC_LOST_DIGIT) {

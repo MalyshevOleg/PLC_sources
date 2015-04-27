@@ -1,0 +1,41 @@
+--- a/Makefile	2008-05-14 09:33:55.000000000 +0300
++++ b/Makefile	2012-03-14 17:04:57.000000000 +0200
+@@ -11,11 +11,14 @@
+ MANDIR=$(DESTDIR)/usr/share/man/man8
+ PPPDIR=$(DESTDIR)/etc/ppp
+ 
+-CC	= gcc
++SRCDIR=.
++VPATH=$(SRCDIR)
++
++CC	?= gcc
+ RM	= rm -f
+-OPTIMIZE= -O0
+-DEBUG	= -g
+-INCLUDE =
++OPTIMIZE= -O2
++DEBUG	=
++INCLUDE = -I. -I$(SRCDIR)
+ CFLAGS  = -Wall $(OPTIMIZE) $(DEBUG) $(INCLUDE)
+ LIBS	= -lutil
+ # Solaris 10
+@@ -35,7 +38,7 @@
+ PPTP_DEPS = pptp_callmgr.h pptp_gre.h ppp_fcs.h util.h test.h \
+ 	    pptp_quirks.h orckit_quirks.h config.h pqueue.h routing.h
+ 
+-all: config.h $(PPTP_BIN) pptpsetup.8
++all: config.h $(PPTP_BIN)
+ 
+ $(PPTP_BIN): $(PPTP_OBJS) $(PPTP_DEPS)
+ 	$(CC) -o $(PPTP_BIN) $(PPTP_OBJS) $(LDFLAGS) $(LIBS)
+@@ -64,10 +67,6 @@
+ install:
+ 	mkdir -p $(BINDIR)
+ 	install -o root -m 555 pptp $(BINDIR)
+-	install -o root -m 555 pptpsetup $(BINDIR)
+-	mkdir -p $(MANDIR)
+-	install -m 644 pptp.8 $(MANDIR)
+-	install -m 644 pptpsetup.8 $(MANDIR)
+ 	mkdir -p $(PPPDIR)
+ 	install -m 644 options.pptp $(PPPDIR)
+ 

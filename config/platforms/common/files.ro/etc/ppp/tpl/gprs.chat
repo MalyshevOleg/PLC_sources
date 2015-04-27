@@ -1,0 +1,8 @@
+ABORT 'BUSY'
+ABORT 'NO CARRIER'
+'' 'AT'
+# negotiation configuraed by WC
+{WC_CHAT}
+# end of the WC-configured negotiation
+TIMEOUT 30
+CONNECT

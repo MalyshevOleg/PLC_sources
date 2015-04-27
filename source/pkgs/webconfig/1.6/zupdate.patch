@@ -1,0 +1,3176 @@
+Index: www/cgi/tpl/main.tpl
+===================================================================
+--- webconfig.old/www/cgi/tpl/main.tpl	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/www/cgi/tpl/main.tpl	(.../trunk)	(revision 2345)
+@@ -1,5 +1,6 @@
+ <html>
+ <head>
++<meta content="text/html; charset=windows-1251" http-equiv="Content-Type" />
+ <title>{=str.title}</title>
+ <script language="javascript" type="text/javascript">
+ <!--
+Index: www/cgi/tpl/net_ids.tpl
+===================================================================
+--- webconfig.old/www/cgi/tpl/net_ids.tpl	(.../tags/20130930-owen-1.6)	(revision 0)
++++ webconfig.new/www/cgi/tpl/net_ids.tpl	(.../trunk)	(revision 2345)
+@@ -0,0 +1,2 @@
++{?ids.m=0:.net_ids_edit.tpl}
++{?ids.m=1:.net_ids_log.tpl}
+Index: www/cgi/tpl/net.tpl
+===================================================================
+--- webconfig.old/www/cgi/tpl/net.tpl	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/www/cgi/tpl/net.tpl	(.../trunk)	(revision 2345)
+@@ -1,5 +1,8 @@
+ {?sp=main:.net_form_main.tpl}
+ {?sp=:.net_form_main.tpl}
++{?sp=router:.net_router.tpl}
+ {?sp=gprs:.net_ppp.tpl}
+ {?sp=vpn:.net_ppp.tpl}
+-{?sp=ddns:.net_ddns.tpl}
+\ No newline at end of file
++{?sp=ddns:.net_ddns.tpl}
++{?sp=wd:.net_wd.tpl}
++{?sp=ids:.net_ids.tpl}
+Index: www/cgi/tpl/net_wd.tpl
+===================================================================
+--- webconfig.old/www/cgi/tpl/net_wd.tpl	(.../tags/20130930-owen-1.6)	(revision 0)
++++ webconfig.new/www/cgi/tpl/net_wd.tpl	(.../trunk)	(revision 2345)
+@@ -0,0 +1,59 @@
++<script language="javascript">
++<!--
++var wd;
++var wd_def;
++{wd_cfg}
++{wd_def_cfg}
++
++function set_data(cfg) {
++	ge('wd_period').value = cfg.wd_period;
++	ge('wd_hosts').value = cfg.wd_hosts;
++	ge('wd_timeout').value = cfg.wd_timeout;
++	ge('wd_count').value = cfg.wd_count;
++}
++
++function breset_click()
++{
++	set_data(wd_def);
++	return false;
++}
++
++
++run = function() 
++{
++	ge('wd_period').focus();
++	set_data(wd);
++}
++
++function wd_check_num(evt) {
++  var theEvent = evt || window.event;
++  var key = theEvent.keyCode || theEvent.which;
++  key = String.fromCharCode( key );
++  var regex = /[0-9]|\./;
++  if( !regex.test(key) ) {
++    theEvent.returnValue = false;
++    if(theEvent.preventDefault) theEvent.preventDefault();
++  }
++}
++
++//-->
++</script>
++<table class="ft" cellpadding="5" cellspacing="5">
++		<tbody id="dset">
++		
++		<tr><td>{=str.net.0} *</td>
++			<td><input id="wd_period" name="wd_period" type="text" value="" onkeypress="wd_check_num(event);" /></td></tr>
++
++		<tbody id="wd_opt">
++		<tr><td>{=str.net.1} *</td>
++			<td><input id="wd_hosts" name="wd_hosts" type="text" value=""/></td></tr>
++
++		<tr><td>{=str.net.2} *</td>
++			<td><input id="wd_timeout" name="wd_timeout" type="text" value="" onkeypress="wd_check_num(event);"/></td></tr>
++
++		<tr><td>{=str.net.3} *</td>
++			<td><input id="wd_count" name="wd_count" type="text" value="" onkeypress="wd_check_num(event);"/></td></tr>
++		
++		</tbody>
++		</tbody>
++</table>
+Index: www/cgi/tpl/net_ids_log.tpl
+===================================================================
+--- webconfig.old/www/cgi/tpl/net_ids_log.tpl	(.../tags/20130930-owen-1.6)	(revision 0)
++++ webconfig.new/www/cgi/tpl/net_ids_log.tpl	(.../trunk)	(revision 2345)
+@@ -0,0 +1,73 @@
++<script language="javascript">
++<!--
++var log_offs = 0;
++var as_on = 1;
++var log_url = '{=script}?p={=pg}&sp={=sp}&cmd=log';
++var refr_id;
++
++function bclose_click()
++{
++	if (ge('ldr').checked) {
++		ge('mform').submit();
++	} else {
++		window.close();
++	}
++}
++function schedule_refresh()
++{
++	refr_id = window.setTimeout('read_log()', 1 * 1000);
++}
++run = function() 
++{
++	if ({=ldr}) {
++		window.close();
++	}
++	e = ge('log');
++	log_offs = e.value.length;
++	e.scrollTop = e.scrollHeight;
++	schedule_refresh();
++}
++function read_handler()
++{
++	var e;
++	var t;
++
++	if (this.readyState != 4) {
++		return;
++	}
++
++	e = ge('log');
++	t = e.scrollTop;
++	e.value += this.responseText;
++	e.scrollTop = as_on ? e.scrollHeight : t;
++	log_offs += this.responseText.length;
++	schedule_refresh();
++}
++function set_as(e)
++{
++	as_on = e.scrollTop + e.clientHeight >= e.scrollHeight;
++}
++function read_log()
++{
++	var cl;
++	try {
++		cl = new XMLHttpRequest();
++	} catch(ex) {
++	}
++	if (!cl) {
++		document.location.replace(log_url);
++		return;
++	}
++
++	cl.open('GET', log_url + '&off=' + log_offs, true);
++	cl.onreadystatechange = read_handler;
++	cl.send();
++}
++//-->
++</script>
++<input type="hidden" name="set" value="1"/>
++<input type="hidden" name="cmd" value="log"/>
++<table border="0" width="100%" cellpadding="5" cellspacing="0">
++<tr><td><textarea style="width: 100%;" id="log" rows="25" cols="80" readonly onscroll="set_as(this)">{readlog}</textarea></td></tr>
++<tr><td><input type="checkbox" name="ldr" id="ldr"> {=str.net.8}</td></tr>
++</table>
+Index: www/cgi/tpl/net_ids_edit.tpl
+===================================================================
+--- webconfig.old/www/cgi/tpl/net_ids_edit.tpl	(.../tags/20130930-owen-1.6)	(revision 0)
++++ webconfig.new/www/cgi/tpl/net_ids_edit.tpl	(.../trunk)	(revision 2345)
+@@ -0,0 +1,72 @@
++<script language="javascript">
++<!--
++var ids;
++var ids_def;
++{ids_cfg}
++{ids_def_cfg}
++
++function set_data(cfg) {
++	ge('ids_enabled').checked = cfg.ids_enabled;
++	ge('ids_server').value = cfg.ids_server;
++	ge('ids_id').value = cfg.ids_id;
++        ge('ids_errtime').value = cfg.ids_errtime;
++	ge('ids_port').value = cfg.ids_port;
++	ge('ids_maxlogsize').value = cfg.ids_maxlogsize;
++	ge('ids_listen').checked = cfg.ids_listen;
++}
++
++function breset_click()
++{
++	set_data(ids_def);
++	return false;
++}
++
++
++run = function() 
++{
++	ge('ids_server').focus();
++	set_data(ids);
++	on_en();
++}
++
++function on_en()
++{
++	ge('ids_server').disabled = !ge('ids_enabled').checked;
++	ge('ids_id').disabled = !ge('ids_enabled').checked;
++        ge('ids_errtime').disabled = !ge('ids_enabled').checked;
++        ge('ids_listen').disabled = !ge('ids_enabled').checked;
++	ge('ids_port').disabled = !ge('ids_enabled').checked;
++	ge('ids_maxlogsize').disabled = !ge('ids_enabled').checked;
++	ge('ids_showlog').disabled = !ge('ids_enabled').checked;
++}
++
++//-->
++</script>
++<table class="ft" cellpadding="5" cellspacing="5">
++		<tbody id="dset">
++		
++                <tr><td>{=str.net.0}</td>
++                        <td><input type="checkbox" id="ids_enabled" name="ids_enabled" onClick="on_en();" /></td></tr>
++
++		<tr><td>{=str.net.1} *</td>
++			<td><input id="ids_server" name="ids_server" type="text" value="" /></td></tr>
++
++		<tr><td>{=str.net.2} *</td>
++			<td><input id="ids_id" name="ids_id" type="text" value="" /></td></tr>
++
++		<tr><td>{=str.net.3} *</td>
++			<td><input id="ids_port" name="ids_port" type="text" value="" /></td></tr>
++
++		<tr><td>{=str.net.4} *</td>
++			<td><input type="checkbox" id="ids_listen" name="ids_listen" /></td></tr>
++
++		<tr><td>{=str.net.5} *</td>
++			<td><input id="ids_errtime" name="ids_errtime" type="text" value="" /></td></tr>
++
++		<tr><td>{=str.net.6} *</td>
++			<td><input id="ids_maxlogsize" name="ids_maxlogsize" type="text" value="" /></td>
++                        <td><a id="ids_showlog" target="net_ids_log" href="{=script}?p={=pg}&sp={=sp}&cmd=log" onClick="return popup(this);">{=str.net.7}</a></td>
++                </tr>
++
++		</tbody>
++</table>
+Index: www/cgi/tpl/net_router.tpl
+===================================================================
+--- webconfig.old/www/cgi/tpl/net_router.tpl	(.../tags/20130930-owen-1.6)	(revision 0)
++++ webconfig.new/www/cgi/tpl/net_router.tpl	(.../trunk)	(revision 2345)
+@@ -0,0 +1,360 @@
++<script language="javascript">
++<!--
++var sel_id = null;
++var debugStore = 1;
++
++function _ge(id, parent) {
++	if (parent == null) {
++		return document.getElementById(id)
++	} else {
++		for (var c = 0; c < parent.childNodes.length; ++c) {
++			var r = _ge(id, parent.childNodes[c]);
++			if (r != null) {
++				return r;
++			}
++			if (parent.childNodes[c].id == id) {
++				return parent.childNodes[c];
++			}
++		}
++	}
++	return null;
++};
++
++function set_data(cfg) {
++	/*ge('router_enabled').checked = cfg.router_enabled;*/
++}
++
++function breset_click() {
++	/*set_data();*/
++	load();
++	return false;
++}
++
++function set_click() {
++	store();
++	return false;
++}
++
++function _ce(tag, id) {
++
++	var e = document.createElement(tag);
++	e.id = id;
++	return e;
++};
++
++function _ci(id, type) {
++	var e = document.createElement("input");
++	e.id = id;
++	e.type = type;
++	return e;
++};
++
++function clearStatus() {
++	_ge("status").innerHTML = "";
++}
++
++function setProtoValue(p) {
++	var proto = _ge("pe_proto");
++	_ge(p, proto).selected = true;
++};
++
++function selector_onClick() {
++	var row = this.parentNode.parentNode;
++	var proto = _ge("pe_proto");
++	setProtoValue(_ge("proto", row).innerHTML);
++	_ge("pe_port").value = _ge("port", row).innerHTML;
++	_ge("pe_hosts").value = _ge("hosts", row).innerHTML;
++	_ge("pe_update").disabled = true;
++	_ge("pe_delete").disabled = false;
++	sel_id = row.id;
++};
++
++function rowId(proto, port, filter, num) {
++	return proto+"-"+port+"-"+filter+"-"+num;
++}
++
++function prepareHosts(h) {
++	var a = h.split(",");
++	for (var i = 0; i < a.length; i++) a[i] = a[i].trim();
++	return a.join(", ");
++}
++
++function addFilter(proto, port, filter, hosts) {
++	var tbody = _ge("pl");
++	var row = _ce("tr", rowId(proto, port, filter, tbody.childElementCount));
++	var selector;
++	var sel_col = row.appendChild(_ce("td"));
++	sel_col.width = "10%";
++	with (selector = sel_col.appendChild(_ci("selector", "radio"))) { name = "selector"; onclick = selector_onClick; };
++	with (row.appendChild(_ce("td", "proto"))) { witdh="15%"; innerHTML = proto; };
++	with (row.appendChild(_ce("td", "port"))) { width="15%"; innerHTML = port; };
++	with (row.appendChild(_ce("td"))) { width="15%"; appendChild(_ci("filter", "checkbox")).checked = filter == "on"; };
++	with (row.appendChild(_ce("td", "hosts"))) { width="45%"; innerHTML = prepareHosts(hosts); };
++	tbody.appendChild(row);
++	selector.click();
++};
++
++function validPort() {
++	return /^[0-9]+$/.test(_ge("pe_port").value.trim());
++}
++
++function validHosts() {
++	if (_ge("pe_hosts").value == "") {
++		return true;
++	}
++	var a = _ge("pe_hosts").value.split(",");
++	for (var i = 0; i < a.length; i++) {
++		if (!/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+|)$/.test(a[i].trim())) {
++			return false;
++		}
++	}
++	return true;
++}
++
++function onAdd() {
++	addFilter(_ge("pe_proto").value, _ge("pe_port").value.trim(), "on", prepareHosts(_ge("pe_hosts").value));
++	listScrollDown();
++	clearStatus();
++};
++
++function onUpdate() {
++	var row = _ge(sel_id);
++	if (row	!== null) {
++		_ge("proto", row).innerHTML = _ge("pe_proto").value;
++		_ge("port", row).innerHTML = _ge("pe_port").value;
++		_ge("hosts", row).innerHTML = prepareHosts(_ge("pe_hosts").value);
++	}
++	clearStatus();
++};
++
++function onDelete() {
++	var row = _ge(sel_id);
++	var tbody = row.parentNode;
++	if (row !== null) {
++		var found = null;
++		for (var s = 0; s < tbody.childNodes.length; ++s) {
++			if (tbody.childNodes[s] == row) {
++				if (s != (tbody.childNodes.length - 1)) {
++					found = _ge("selector", tbody.childNodes[s + 1]);
++					break;
++				}
++			}
++		}
++		row.parentNode.removeChild(row);
++		if (found == null) {
++			if (tbody.childNodes.length > 0) {
++				found = _ge("selector", tbody.childNodes[tbody.childNodes.length - 1]);
++			}
++		}
++		if (found != null) {
++			found.click();
++		}
++		_ge("pe_delete").disabled = tbody.childNodes.length == 0;
++	}
++	clearStatus();
++};
++
++function onChange(p) {
++	if (validPort() && validHosts()) {
++		_ge("pe_update").disabled = false;
++		_ge("pe_add").disabled = false;
++	} else {
++		_ge("pe_update").disabled = true;
++		_ge("pe_add").disabled = true;
++	}
++};
++
++function onChangePort(p) {
++	var valid;
++	valid = validPort();
++	_ge("pe_update").disabled = !valid;
++	_ge("pe_add").disabled = !valid;
++};
++
++function onChangeHosts(p) {
++	var valid;
++	valid = validHosts();
++	_ge("pe_update").disabled = !valid;
++	_ge("pe_add").disabled = !valid;
++};
++
++/* */
++
++function listScrollDown() {
++	var scroll = _ge("pl_scroll");
++	scroll.scrollTop = scroll.scrollHeight;
++}
++
++/* */
++
++var statusDots;
++var statusMsg;
++var statusTmr = null;
++
++function updateProgress() {
++	statusDots = statusDots + 1;
++	var dots = new Array(statusDots+1).join(".");
++	_ge("status").innerHTML = statusMsg + dots;
++	if (statusDots == 6) statusDots = 0; 
++	statusTmr = setTimeout(updateProgress, 1000);
++
++}
++
++function setProgress(msg) {
++	statusMsg = msg + ": ";
++	statusDots = 0;
++	updateProgress();
++}
++
++function cancelProgress() {
++	if (statusTmr !== null) {
++		clearTimeout(statusTmr);
++		statusTmr = null;
++	}
++	clearStatus();
++}
++
++/* */
++
++function store() {
++	var cfg = { router_enabled: false, ports: [] } ;
++	cfg.router_enabled = _ge("router_enabled").checked ? "1" : "0";
++	tbody = _ge("pl");
++	for (var p = 0; p < tbody.childNodes.length; ++p) {
++		var row = tbody.childNodes[p];
++		var hosts = _ge("hosts", row).innerHTML;
++		if (hosts == "") {
++			hosts = undefined;
++		} else {
++			hosts = hosts.split(",")
++		}
++		cfg.ports.push({ proto: _ge("proto", row).innerHTML, port: _ge("port", row).innerHTML, filter: _ge("filter", row).checked ? "on" : "off", hosts: hosts });
++	}
++	
++	var req = new XMLHttpRequest();
++	req.onreadystatechange = function() {
++		if (req.readyState == 4) {
++			cancelProgress();
++			if (req.status == 200) {
++				status = JSON.parse(req.responseText).status;
++				if (status !== "ok") {
++					_ge("status").innerHTML = status;
++				} else {
++					_ge("status").innerHTML = "{=str.net.13}";
++					setTimeout(clearStatus, 20000);
++				}
++			} else {
++				_ge("status").innerHTML = "{=str.net.11}: {=str.net.10}";
++			}	
++		}
++	}
++
++	req.open("POST", "{=script}?p={=pg}&sp={=sp}&cmd=store&ts="+(Date.now() / 1000 | 0), true);
++	req.setRequestHeader("Content-Type", "application/json");
++	setProgress("{=str.net.11}");
++	req.send(JSON.stringify(cfg));
++};
++
++function load() {
++	var req = new XMLHttpRequest();
++
++	_ge("pe_delete").disabled = true;
++	
++	req.onreadystatechange = function() {
++		if (req.readyState == 4) {
++			cancelProgress();
++			if (req.status == 200) {
++				var cfg = JSON.parse(req.responseText);
++				if (typeof cfg.status !== undefined && cfg.status !== "ok") {
++					_ge("status").innerHTML = cfg.status;
++				} else {
++					_ge("pl").innerHTML = "";
++					sel_id = null;
++					for (p in cfg.ports) {
++						with (cfg.ports[p]) {
++							addFilter(proto, port, filter, typeof cfg.ports[p].hosts == 'undefined' ? "" : cfg.ports[p].hosts.join(","));
++						}
++					}
++					_ge("router_enabled").checked = (typeof cfg.router_enabled !== 'undefined' && cfg.router_enabled == "1") 
++					listScrollDown();
++					onChange();
++				}
++			} else {
++				_ge("status").innerHTML = "{=str.net.12}: HTTP "+req.status;
++			}
++		}
++	}
++	req.open("GET", "{=script}?p={=pg}&sp={=sp}&cmd=load&ts="+(Date.now() / 1000 | 0), true);
++	setProgress("{=str.net.12}");
++	req.send();
++};
++
++run = function() 
++{
++	load();
++	ge('router_enabled').focus();
++	/* set_data(router); */
++}
++
++//-->
++</script>
++<table class="ft" cellpadding="5" cellspacing="5">
++		<tbody id="dset">
++		
++                <tr><td width="38%">{=str.net.1}</td>
++                        <td><input type="checkbox" id="router_enabled" name="router_enabled"/></td></tr>
++		</tbody>
++</table>
++<table class="ft" cellpadding="5" cellspacing="5">
++	<tbody>
++		<tr>
++			<td>
++				{=str.net.9}<br>
++				<table frame="border" width="100%">
++					<thead>
++						<th width="9%"></th>
++						<th width="15%">{=str.net.2}</th>
++						<th width="15%">{=str.net.3}</th>
++						<th width="15%">{=str.net.4}</th>
++						<th width="45%">{=str.net.5}</th>
++					</thead>
++					<tbody>
++						<tr>
++							<td colspan="5">
++								<div style="overflow-x: hidden; overflow-y: scroll; height: 100px;" id="pl_scroll">
++									<table rules="all" frame="border" width="100%">
++										<tbody id="pl"></tbody>
++									</table>
++								</div>
++							</td>
++						</tr>
++					</tbody>
++				</table>
++			</td>
++		</tr>
++	</tbody>
++</table>
++<table class="ft" cellpadding="5" cellspacing="5">
++	<tbody>
++		<tr>
++			<td>
++				<table id="pe" frame="none" width="100%">
++					<tr>
++						<td></td>
++						<td>{=str.net.3}</td>
++						<td>{=str.net.5}</td>
++					</tr>
++					<tr>
++						<td><select id="pe_proto" onchange="onChange(this)"><option id="tcp">tcp</option><option id="udp">udp</option><option id="all">all</option></select></td>
++						<td><input id="pe_port" type="text" oninput="onChangePort(this)"></input></td>
++						<td><input id="pe_hosts" type="text" oninput="onChangeHosts(this)"></input></td>
++						<td><input id="pe_add" type="submit" value="{=str.net.6}" onclick="onAdd(); return false;" disabled="true"/></td>
++						<td><input id="pe_update" type="submit" value="{=str.net.7}" onclick="onUpdate(); return false;" disabled="true"/></td>
++						<td><input id="pe_delete" type="submit" value="{=str.net.8}" onclick="onDelete(); return false;" disabled="true"/></td>
++					</tr>
++
++				</table>
++			</td>
++		</tr>
++	</tbody>
++</table>
+Index: wc/wc_net_ids.c
+===================================================================
+--- webconfig.old/wc/wc_net_ids.c	(.../tags/20130930-owen-1.6)	(revision 0)
++++ webconfig.new/wc/wc_net_ids.c	(.../trunk)	(revision 2345)
+@@ -0,0 +1,519 @@
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <unistd.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <errno.h>
++#include <dirent.h>
++#include <ctype.h>
++#include <time.h>
++#include <stdarg.h>
++#include <fcntl.h>
++#include "cgic.h"
++
++#include "wc_conf_file.h"
++#include "wc_tpl.h"
++#include "wc_page.h"
++#include "wc_net.h"
++#include "wc_net_ids.h"
++
++#include "wc_strings.h"
++
++#include "wc_conf_option.h"
++
++#include "wc_debug.h"
++
++#ifdef WC_CONFIG_MENU_NET_IDS
++
++#define IDS_ENABLED_MAX_LEN 11
++#define IDS_SERVER_MAX_LEN	255
++#define IDS_ID_MAX_LEN		11
++#define IDS_ERROR_TIMEOUT_MAX_LEN 11
++#define IDS_LISTEN_MAX_LEN	11
++#define IDS_PORT_MAX_LEN        255
++#define IDS_MAX_LOG_SIZE	11
++
++#define IDS_MODE_EDIT		0
++#define IDS_MODE_LOG		1
++#define IDS_MODE_LOG_TEXT	2
++
++#define IDS_LOG_FILE		"/var/log/net_ids.log"
++
++typedef struct ids_conf_t {
++	char enabled[IDS_ENABLED_MAX_LEN + 1];
++	char server[IDS_SERVER_MAX_LEN + 1];
++	char id[IDS_ID_MAX_LEN + 1];
++	char error_timeout[IDS_ERROR_TIMEOUT_MAX_LEN + 1];
++	char listen[IDS_LISTEN_MAX_LEN + 1];
++	char port[IDS_PORT_MAX_LEN + 1];
++	char max_log_size[IDS_MAX_LOG_SIZE + 1];
++} ids_conf_t;
++
++static struct ids_data {
++	wc_page_data_t *pdata;
++	ids_conf_t conf;
++
++	int mode;
++	int offset;
++	int log_del;
++} ids;
++
++static struct wc_conf_option conf_options[] = {
++	{ .name = "ENABLED", 
++          .cgi_name = "ids_enabled", 
++          .value = ids.conf.enabled, 
++          .val_size = sizeof(ids.conf.enabled), 
++          .def_value = "1", 
++          .quot = 0,
++          .checkbox = 1 },
++	{ .name = "SERVER", 
++          .cgi_name = "ids_server", 
++          .value = ids.conf.server, 
++          .val_size = sizeof(ids.conf.server), 
++          .def_value = "m2m.teleofis.ru:5000", 
++          .quot = 0 },
++	{ .name = "ID", 
++          .cgi_name = "ids_id", 
++          .value = ids.conf.id, 
++          .val_size = sizeof(ids.conf.id), 
++          .def_value = "0x12345678",
++          .quot = 0 },
++	{ .name = "ERROR_TIMEOUT", 
++          .cgi_name = "ids_errtime", 
++          .value = ids.conf.error_timeout, 
++          .val_size = sizeof(ids.conf.error_timeout), 
++          .def_value = "30",
++          .quot = 0 },
++	{ .name = "LISTEN",
++					.cgi_name = "ids_listen",
++					.value = ids.conf.listen,
++					.val_size = sizeof(ids.conf.listen),
++					.def_value = "0",
++					.quot = 0,
++					.checkbox = 1 },
++        { .name = "PORT",
++          .cgi_name = "ids_port",
++          .value = ids.conf.port,
++          .val_size = sizeof(ids.conf.port),
++          .def_value = "5000",
++          .quot = 0 },
++        { .name = "MAXLOGSIZE",
++          .cgi_name = "ids_maxlogsize",
++          .value = ids.conf.max_log_size,
++          .val_size = sizeof(ids.conf.max_log_size),
++          .def_value = "20000",
++          .quot = 0 },
++};
++
++/* Commands */
++static void do_cmd_ids_cfg(char *arg);
++static wc_tpl_cmd_t ids_cfg_cmd = {
++	.name = "ids_cfg", .handler = do_cmd_ids_cfg
++};
++
++static void do_cmd_ids_def_cfg(char *arg);
++static wc_tpl_cmd_t ids_def_cfg_cmd = {
++	.name = "ids_def_cfg", .handler = do_cmd_ids_def_cfg,
++};
++
++static void do_cmd_readlog(char *arg);
++static wc_tpl_cmd_t readlog_cmd = {
++	.name = "readlog", .handler = do_cmd_readlog,
++};
++
++/* Vars */
++static const char *get_var_ids(char *field);
++static wc_tpl_var_t ids_vars[] = {
++	{ .name = "ids", .get = &get_var_ids },
++	{ .name = NULL, },
++};
++
++static const char *get_var_ldr(char *field);
++static wc_tpl_var_t ldr_var = {	
++	.name = "ldr", .get = get_var_ldr,
++};
++
++/* local methods */
++static int checkbox_is_on(const char *value);
++static int get_current_settings(wc_page_data_t *data);
++static int apply_new_settings(wc_page_data_t *data);
++static void do_delete_log(void);
++static void process_log_output_request(void);
++
++static const char *get_var_ids(char *field)
++{
++	int i;
++
++	dbg_log("get_var_ids(%s)\n", field);
++
++	if (!field) {
++		return NULL;
++	}
++
++	for (i = 0; i < ARRAY_SIZE(conf_options); i++) {
++		if (strcmp(field, conf_options[i].cgi_name) == 0) {
++			return conf_options[i].value;
++		}
++	}
++
++	if (strcmp(field, "m") == 0) {
++		static char mode_text[32];
++		snprintf(mode_text, sizeof(mode_text), "%u", ids.mode);
++		dbg_log("get_var_ids(%s) - m - %s\n", field, mode_text);
++		return mode_text;
++	}
++
++	return NULL;
++}
++
++static const char *get_var_ldr(char *field)
++{
++	return ids.log_del ? "1" : "0";
++}
++
++static int process_cfg_line(char *var, char *val, void *data)
++{
++	int len, buf_size, i;
++	char *pval = NULL;
++
++ 	len = strlen(val);
++	
++	for (i = 0; i < ARRAY_SIZE(conf_options); i++) {
++		if (strcmp(var, conf_options[i].name) == 0) {
++			pval = conf_options[i].value;
++			buf_size = conf_options[i].val_size - 1;
++			break;
++		}
++	}
++	if (pval) {
++		if (len >= buf_size) {
++			strcpy(pval, "");	/* NOTE: it fits any of the vals buffers */
++		} else {
++			strcpy(pval, val);
++		}
++	}
++
++	
++	return 1;
++}
++
++struct ids_edit_data {
++	int number;
++	struct wc_conf_option *options;
++};
++
++static int edit_ids_conf_line(wc_conf_parse_data_t *parse_data, void *data)
++{
++	FILE *fp = parse_data->fp_out;
++	struct ids_edit_data *d = (struct ids_edit_data *)data;
++	int i;
++	int enabled = 1;
++
++	if (parse_data->type == WC_CLT_WRONG) {
++		return 1;	/* remove wrong lines */
++	}
++
++	for (i = 0; i < d->number; i++) {
++		if (strcmp(d->options[i].cgi_name, "ids_enabled") == 0) {
++			enabled = checkbox_is_on(d->options[i].value);
++			break;
++		}
++	}
++
++	if (parse_data->type == WC_CLT_EOF || parse_data->type == WC_CLT_CREATED) {
++		for (i = 0; i < d->number; i++) {
++			if (d->options[i].set == 0) {
++				if (d->options[i].quot) {
++					fprintf(fp, "%s=\"%s\"\n", d->options[i].name, d->options[i].value);
++				} else {
++					fprintf(fp, "%s=%s\n", d->options[i].name, d->options[i].value);
++				}
++			}
++		}		
++		return 0;
++	}
++
++	if (parse_data->type == WC_CLT_VAR) {
++		for (i = 0; i < d->number; i++) {
++			if (d->options[i].name && strlen(d->options[i].name) == parse_data->var_len && memcmp(d->options[i].name, parse_data->var, parse_data->var_len) == 0) {
++				d->options[i].set = 1;
++				if (strcmp(d->options[i].name, "ENABLED") == 0) {
++					fprintf(fp, "%s=%s\n", d->options[i].name, d->options[i].value);
++					return 1;
++				} else if (enabled) {
++					if (d->options[i].quot) {
++						fprintf(fp, "%s=\"%s\"\n", d->options[i].name, d->options[i].value);
++					} else {
++						fprintf(fp, "%s=%s\n", d->options[i].name, d->options[i].value);
++					}
++					return 1;
++				}
++			}
++		}
++	}
++	fprintf(fp, "%s", parse_data->line);
++	return 1;
++}
++
++static int ids_update_config(void)
++{
++	int r;
++	struct ids_edit_data data = { .number = ARRAY_SIZE(conf_options), conf_options };
++
++	for (r = 0; r < data.number; r++) {
++		data.options[r].set = 0;
++	}
++
++	r = wc_conf_file_edit(IDS_CONFIG_FILE, edit_ids_conf_line, &data, 1);
++	if (r) {
++		sprintf(ids.pdata->status_buf, "%s: %s (%s): %s", 
++				WC_STR_STATUS_ERROR, WC_STR_ERR_IDS_CFG_EDIT,
++				IDS_CONFIG_FILE, strerror(-r));
++	}
++	
++	return r;
++}
++
++/* --- Interface methods --- */
++
++void wc_net_ids_process(wc_page_data_t *data, int submitted)
++{
++	ids.pdata = data;
++	char cmd[32];
++	cgiFormResultType cgi_r;
++
++	wc_tpl_vars_register(ids_vars);
++	
++	cgi_r = cgiFormString("cmd", cmd, sizeof(cmd));
++	
++	dbg_log("wc_net_ids_process: entering (submitted=%d)\n", submitted);
++
++	ids.mode = IDS_MODE_EDIT;
++	
++	if (cgi_r == cgiFormSuccess) {
++		dbg_log("cgiFormString(cmd) = success, value=%s\n", cmd);
++		if (strcmp(cmd, "log") == 0) {
++			dbg_log("cgiFormString(cmd) - mode log\n");
++			ids.mode = IDS_MODE_LOG;
++			data->flags.popup_tpl = 1;
++			data->flags.subm_en = 0;
++			cgi_r = cgiFormInteger("off", &ids.offset, 0);
++			if (cgi_r == cgiFormSuccess) {
++				ids.mode = IDS_MODE_LOG_TEXT;
++				ids.pdata->ct_id = WC_CT_TEXT;	/* will output TEXT instead of HTML */
++			} else {
++				wc_tpl_cmd_register(&readlog_cmd);
++				wc_tpl_var_register(&ldr_var);
++				sprintf(data->form_title, "%s", WC_STR_IDS_LOG_TITLE);
++				wc_form_enable(WC_FBA_CENTER, &wc_btn_close, NULL, NULL);
++				if (submitted) {
++					ids.log_del = 1;
++					do_delete_log();
++				}
++			}
++		}
++	} else {
++		dbg_log("cgiFormString(cmd) = error\n");
++		wc_tpl_cmd_register(&ids_cfg_cmd);
++		wc_tpl_cmd_register(&ids_def_cfg_cmd);
++
++		wc_form_enable(WC_FBA_RIGHT, &wc_btn_ok, &wc_btn_reset, NULL);
++
++		if (submitted) {
++			/* get data from the request .......???? */
++			apply_new_settings(data);
++		}
++
++		/* read ?????? and extract current settings */
++		get_current_settings(data);
++	}
++}
++
++void wc_net_ids_post_process(wc_page_data_t *data)
++{
++	if (ids.mode == IDS_MODE_LOG_TEXT) {
++		process_log_output_request();
++	}
++}
++
++
++static int get_current_settings(wc_page_data_t *data)
++{
++	int r;
++	/* read rmsync config */
++	r = wc_conf_file_read(IDS_CONFIG_FILE, &process_cfg_line, NULL);
++	if (r) {
++		sprintf(data->status_buf, "Error: failed to read %s config file", IDS_CONFIG_FILE);
++		return -1;
++	}
++	for (r = 0; r < ARRAY_SIZE(conf_options); r++) {
++		if (strlen(conf_options[r].value) == 0) {
++			snprintf(conf_options[r].value, conf_options[r].val_size, "%s", conf_options[r].def_value);
++		}
++	}
++	return 0;
++}
++
++static int apply_new_settings(wc_page_data_t *data)
++{
++	cgiFormResultType result;
++	ids_conf_t conf;
++	struct wc_page_conf page_conf[] = {
++		{ .cgi_name = "ids_enabled", .value = conf.enabled, .val_size = sizeof(conf.enabled), .check_number = 0, .error_str = WC_STR_ERR_INVAL_IDS_ENABLED, .checkbox = 1 },
++		{ .cgi_name = "ids_server", .value = conf.server, .val_size = sizeof(conf.server), .check_number = 0, .error_str = WC_STR_ERR_INVAL_IDS_SERVER, .checkbox = 0 },
++		{ .cgi_name = "ids_id", .value = conf.id, .val_size = sizeof(conf.id), .check_number = 0, .error_str = WC_STR_ERR_INVAL_IDS_ID, .checkbox = 0 },
++    { .cgi_name = "ids_errtime", .value = conf.error_timeout, .val_size = sizeof(conf.error_timeout), .check_number = 1, .error_str = WC_STR_ERR_INVAL_IDS_ERROR_TIMEOUT, .checkbox = 0 },
++    { .cgi_name = "ids_listen", .value = conf.listen, .val_size = sizeof(conf.listen), .check_number = 1, .error_str = WC_STR_ERR_INVAL_IDS_LISTEN, .checkbox = 1 },
++    { .cgi_name = "ids_port", .value = conf.port, .val_size = sizeof(conf.port), .check_number = 1, .error_str = WC_STR_ERR_INVAL_IDS_PORT, .checkbox = 0 },
++		{ .cgi_name = "ids_maxlogsize", .value = conf.max_log_size, .val_size = sizeof(conf.max_log_size), .check_number = 1, .error_str = WC_STR_ERR_INVAL_IDS_MAX_LOG_SIZE, .checkbox = 0 },
++	};
++	
++	dbg_log("apply_new_settings: mode=%d\n", ids.mode);
++
++	int i,r;
++	result = cgiFormString("ids_enabled", conf.enabled, sizeof(conf.enabled));
++	if (result == cgiFormNotFound || result == cgiFormEmpty) {
++		for (r = 0; r < ARRAY_SIZE(page_conf); r++) {
++			if (strcmp(page_conf[r].cgi_name, "ids_enabled") == 0) {
++				strcpy(conf_options[r].value, "0");
++				break;
++			}
++		}
++	} else if (result != cgiFormSuccess) {
++		snprintf(data->status_buf, sizeof(data->status_buf), "%s: %s", WC_STR_STATUS_ERROR, WC_STR_ERR_INVAL_IDS_ENABLED);
++		return -1;
++	} else {
++		for (i = 0; i < ARRAY_SIZE(page_conf); i++) {
++                        if (page_conf[i].checkbox) {
++				result = cgiFormString(page_conf[i].cgi_name, page_conf[i].value, page_conf[i].val_size);
++				if (result == cgiFormNotFound) {
++					strcpy(page_conf[i].value, "0");
++				} else if (result != cgiFormSuccess && result != cgiFormEmpty) {
++					snprintf(data->status_buf, sizeof(data->status_buf), "%s: %s", WC_STR_STATUS_ERROR, page_conf[i].error_str);
++					return -1;
++				} else {
++					snprintf(page_conf[i].value, page_conf[i].val_size, "%u", checkbox_is_on(page_conf[i].value));
++				}
++                        } else {
++				result = cgiFormString(page_conf[i].cgi_name, page_conf[i].value, page_conf[i].val_size);
++                        	if (result != cgiFormSuccess && result != cgiFormEmpty) {
++					snprintf(data->status_buf, sizeof(data->status_buf), "%s: %s", WC_STR_STATUS_ERROR, page_conf[i].error_str);
++					return -1;
++				}
++			}
++			if (page_conf[i].check_number) {
++				r = strtoul(page_conf[i].value, 0, 0);
++				if (r == 0 && page_conf[i].value[0] != '0') {
++					snprintf(data->status_buf, sizeof(data->status_buf), "%s: %s", WC_STR_STATUS_ERROR, page_conf[i].error_str);
++					return -1;
++				}
++			}
++		}
++		for (i = 0; i < ARRAY_SIZE(page_conf); i++) {
++			for (r = 0; r < ARRAY_SIZE(conf_options); r++) {
++				if (strcmp(page_conf[i].cgi_name, conf_options[r].cgi_name) == 0) {
++					strcpy(conf_options[i].value, page_conf[i].value);
++					break;
++				}
++			}
++		}
++	}
++	r = ids_update_config();
++	if (!r) {
++		char sys_cmd[256];
++		snprintf(sys_cmd, sizeof(sys_cmd), "%s", "/usr/bin/net_ids.sh -reload");
++		system(sys_cmd);
++	}
++	return r;
++}
++
++static void do_cmd_ids_cfg(char *arg)
++{
++	int i;
++	fprintf(cgiOut, "var ids={");
++	for (i = 0; i < ARRAY_SIZE(conf_options); i++) {
++  		fprintf(cgiOut, "%s:", conf_options[i].cgi_name);
++		if (conf_options[i].checkbox) {
++   			fprintf(cgiOut, "%u", checkbox_is_on(conf_options[i].value));
++		} else {
++			fprintf(cgiOut, "'%s'", conf_options[i].value);
++		}
++		if (i != ARRAY_SIZE(conf_options) - 1) {
++			fprintf(cgiOut, ",");
++		}
++	}
++	fprintf(cgiOut, "};");
++}
++
++static void do_cmd_ids_def_cfg(char *arg)
++{
++	int i;
++	fprintf(cgiOut, "var ids_def={");
++	for (i = 0; i < ARRAY_SIZE(conf_options); i++) {
++  		fprintf(cgiOut, "%s:", conf_options[i].cgi_name);
++		if (conf_options[i].checkbox) {
++   			fprintf(cgiOut, "%u", checkbox_is_on(conf_options[i].value));
++		} else {
++			fprintf(cgiOut, "'%s'", conf_options[i].value);
++		}
++		if (i != ARRAY_SIZE(conf_options) - 1) {
++			fprintf(cgiOut, ",");
++		}
++	}
++	fprintf(cgiOut, "};");
++}
++
++static int checkbox_is_on(const char *value)
++{
++	return strcasecmp(value, "on") == 0 || strcasecmp(value, "yes") == 0 || strcasecmp(value, "true") == 0 || strcasecmp(value, "1") == 0;
++}
++
++static void do_cmd_readlog(char *arg)
++{
++	process_log_output_request();
++}
++
++static void process_log_output_request(void)
++{
++	char chunk[256];
++	FILE *fp;
++	ssize_t count;
++	int r;
++
++	dbg_log("process_log_output_request: logfile=%s, mode=%u, offset=%u\n", IDS_LOG_FILE, ids.mode, ids.offset);
++
++	if (ids.mode != IDS_MODE_LOG && ids.mode != IDS_MODE_LOG_TEXT) {
++		return;
++	}
++
++	/* read log file and output it to browser */
++	fp = fopen(IDS_LOG_FILE, "r");
++	if (fp) {
++		dbg_log("do_cmd_readlog: fp=%x\n", fp);
++		r = fseek(fp, ids.offset, SEEK_SET);
++		while (!feof(fp)) {
++			count = fread(chunk, 1, sizeof(chunk), fp);
++			if (count > 0)  {
++				r = fwrite(chunk, count, 1, cgiOut);
++			}
++			if (count < sizeof(chunk)) {
++				break;
++			}
++		}
++		fclose(fp);
++	} 
++}
++
++
++static void do_delete_log(void)
++{
++	dbg_log("do_delete_log: logfile=%s\n", IDS_LOG_FILE);
++	int h = open(IDS_LOG_FILE, O_WRONLY | O_TRUNC);
++	if (h >= 0) {
++		close(h);
++	}
++}
++
++
++#endif
+Index: wc/wc_net_router.c
+===================================================================
+--- webconfig.old/wc/wc_net_router.c	(.../tags/20130930-owen-1.6)	(revision 0)
++++ webconfig.new/wc/wc_net_router.c	(.../trunk)	(revision 2345)
+@@ -0,0 +1,548 @@
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <unistd.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <errno.h>
++#include <dirent.h>
++#include <ctype.h>
++#include <time.h>
++#include <stdarg.h>
++#include <regex.h>
++#include "cgic.h"
++
++#include "wc_conf_file.h"
++#include "wc_tpl.h"
++#include "wc_page.h"
++#include "wc_net.h"
++
++#include "wc_conf_option.h"
++
++#include "wc_strings.h"
++
++#include "wc_debug.h"
++#include "jsmn.h"
++
++#if defined(WC_CONFIG_MENU_NET_ROUTER)
++
++struct option {
++	char conf_var[64];
++	char json_var[64];
++	char val[64];
++	int set;
++};
++
++static struct option netconf_opts[] = {
++	{ .conf_var = "GPRS_ROUTER", .json_var = "router_enabled" },
++	{ .conf_var = "" }
++};
++
++static char *status_buf;
++static int status_buf_sz;
++
++static int report_error(const char *fmt, ...)
++{
++	va_list args;
++	va_start(args, fmt);
++	vsnprintf(status_buf, status_buf_sz, fmt, args);
++	va_end(args);
++	return -1;
++}
++
++int xread(FILE *f, char **buf, char *delim)
++{
++	int ptr, size, ch;
++	const int chunk_sz = BUFSIZ;
++
++	*buf = 0;
++	ptr = 0;
++	size = 0;
++
++	for (;;) {
++		if (ptr == size) {
++			size += chunk_sz;
++			*buf = realloc(*buf, size);
++			if (*buf == 0) {
++				report_error("failed to realloc buf with size %d", size);
++				return -1;
++			}
++		}
++		size += chunk_sz;
++		ch = fgetc(f);
++		if (ch == EOF || (delim != 0 && strchr(delim, ch) != 0)) {
++			break;
++		}
++		
++		(*buf)[ptr++] = ch;
++	}
++	if (ch == EOF && ptr == 0) {
++		free(*buf);
++		*buf = 0;
++		size = 0;
++	} else {
++		size = ptr + 1;
++		*buf = realloc(*buf, size);
++		if (*buf == 0) {
++			report_error("failed to realloc buf with size %d", size);
++			return -1;
++		}
++		(*buf)[ptr] = 0;
++	}
++	return size;
++}
++
++static int jsoneq(const char *json, jsmntok_t *tok, const char *s) 
++{
++	if (tok->type == JSMN_STRING && (int) strlen(s) == tok->end - tok->start && strncmp(json + tok->start, s, tok->end - tok->start) == 0) {
++		return 0;
++        }
++        return -1;
++}
++
++static int jsonarr(const char *json, jsmntok_t *tok, const char *s)
++{
++	if (tok[1].type == JSMN_ARRAY && jsoneq(json, tok, s) == 0) {
++		return 0;
++	}
++	return -1;
++}
++
++
++static void write_token(FILE *f, const char *buf, jsmntok_t *tok, int index)
++{
++	if (index >= 0) {
++		fprintf(f, "%.*s", tok[index].end - tok[index].start, buf + tok[index].start);
++	}
++}
++
++static void write_portcfg(FILE *f, const char *buf, jsmntok_t *tok, int proto, int port, int filter, int *hosts, int nhosts)
++{
++	int i;
++	if (proto < 0) {
++		fprintf(f, "all");
++	} else {
++		write_token(f, buf, tok, proto);
++	}
++	fprintf(f, "=");
++	write_token(f, buf, tok, port);
++	fprintf(f, ",");
++	write_token(f, buf, tok, filter);
++	for (i = 0; i < nhosts; ++i) {
++		fprintf(f, ",");
++		write_token(f, buf, tok, hosts[i]);
++	}
++	fprintf(f, "\n");
++}
++
++static int edit_netconf_line(wc_conf_parse_data_t *parse_data, void *data)
++{
++	FILE *fp = parse_data->fp_out;
++	struct option *opt;
++
++	if (parse_data->type == WC_CLT_WRONG) {
++		return 1;
++	}
++
++	dbg_log("%d: \"%.*s\",%s", parse_data->type, parse_data->var_len, parse_data->var, parse_data->line); 
++
++	if (parse_data->type == WC_CLT_EOF || parse_data->type == WC_CLT_CREATED) {
++		for (opt = netconf_opts; opt->conf_var[0] != 0; ++opt) {
++			if (opt->set == 0) {
++				fprintf(fp, "%s=%s\n", opt->conf_var, opt->val);
++			}
++		}
++		return 0;
++	}
++	if (parse_data->type == WC_CLT_VAR) {
++		for (opt = netconf_opts; opt->conf_var[0] != 0; ++opt) {
++			if (strlen(opt->conf_var) == parse_data->var_len && memcmp(opt->conf_var, parse_data->var, parse_data->var_len) == 0) {
++				opt->set = 1;
++				fprintf(fp, "%s=%s\n", opt->conf_var, opt->val);
++				return 1;
++			}
++		}
++	}
++	fprintf(fp, "%s", parse_data->line);
++	return 1;
++}
++
++static int update_netconf_option(const char *json_var, char *buf, int len)
++{
++	struct option *opt;
++	dbg_log("update_netconf_option: %s, %.*s\n", json_var, len, buf);
++	for (opt = netconf_opts; opt->conf_var[0] != 0; ++opt) {
++		if (strcmp(opt->json_var, json_var) == 0) {
++			if (len > sizeof(opt->val)) {
++				len = sizeof(opt->val) - 1;
++			}
++			strncpy(opt->val, buf, len);
++			opt->val[len] = 0;
++			dbg_log("update_netconf_option: %s=%s (%s)\n", opt->conf_var, opt->val, opt->json_var);
++			return 1;
++		}
++	}
++	return 0;
++}
++
++static int store_firewall_config(void)
++{
++	char *buf;
++	jsmn_parser p;
++	jsmnerr_t res;
++	jsmntok_t *tok = 0;
++	int l, i, ntok, op, proto, port, filter, *hosts, nhosts, do_update_netconf, r;
++	enum { s_top, s_ports, s_port, s_host } state;
++	FILE *fconf;
++
++	if ((l = xread(cgiIn, &buf, 0)) > 0) {
++		ntok = 16;
++		jsmn_init(&p);
++		do {
++			ntok = ntok * 2;
++			tok = realloc(tok, sizeof(jsmntok_t) * ntok);
++			if (tok == 0) {
++				report_error( "failed to realloc jsmn tok(%d)", ntok);
++				return -1;
++			}
++			res = jsmn_parse(&p, buf, l, tok, ntok);
++		} while (res == JSMN_ERROR_NOMEM);
++		dbg_log("store_firewall_config: %.*s\n", l, buf);
++		if (res < 0) {
++			report_error( "jsmn_parse returned %d\n", res);
++			return -1;
++		}
++		if (p.toknext < 1 && tok[0].type != JSMN_OBJECT) {
++			report_error( "json object expected\n");
++			return -1;
++		}
++		fconf = fopen(FIREWALL_CONF, "wt");
++		if (fconf == 0) {
++			report_error( "open %s failed: %s", FIREWALL_CONF, strerror(errno));
++			return -1;
++		}
++		proto = port = filter = -1;
++		hosts = alloca(p.toknext * sizeof(int));
++		op = -2;
++		state = s_top;
++		nhosts = 0;
++		do_update_netconf = 0;
++		for (i = 0; i < p.toknext; ++i) {
++			if (tok[i].parent == op && tok[i].type == JSMN_OBJECT) {
++				if (state == s_port || state == s_host) {
++					write_portcfg(fconf, buf, tok, proto, port, filter, hosts, nhosts);
++				}
++				state = s_port;
++				nhosts = 0;
++			}
++			if (tok[i].parent < op) {
++				if (state == s_port || state == s_host) {
++					write_portcfg(fconf, buf, tok, proto, port, filter, hosts, nhosts);
++				}
++				state = s_top;
++			}
++			if (state == s_port) {
++				if (jsoneq(buf, &tok[i], "proto") == 0) {
++					proto = ++i;
++				} else if (jsoneq(buf, &tok[i], "port") == 0) {
++					port = ++i;
++				} else if (jsoneq(buf, &tok[i], "filter") == 0) {
++					filter = ++i;
++				} else if (jsonarr(buf, &tok[i], "hosts") == 0) {
++					state = s_host;
++				}
++			} else if (state == s_host) {
++				if (tok[i].type == JSMN_STRING) {
++					hosts[nhosts++] = i;
++				}
++			} else if (state == s_top) {
++				if (jsonarr(buf, &tok[i], "ports") == 0) {
++					state = s_ports;
++					op = ++i;
++				} else if (jsoneq(buf , &tok[i], "router_enabled") == 0) {
++					i += 1;
++					do_update_netconf |= update_netconf_option("router_enabled", buf + tok[i].start, tok[i].end - tok[i].start);
++				}
++			}
++		}
++		if (state == s_port || state == s_host) {
++			write_portcfg(fconf, buf, tok, proto, port, filter, hosts, nhosts);
++		}
++		fclose(fconf);
++		if (do_update_netconf) {
++			dbg_log("update %s\n", NET_CONFIG_FILE);
++			r = wc_conf_file_edit(NET_CONFIG_FILE, edit_netconf_line, netconf_opts, 1);
++			if (r) {
++				report_error("%s: %s (%s): %s", WC_STR_STATUS_ERROR, WC_STR_NET_ROUTER_SAVE_ERR_MSG, NET_CONFIG_FILE, strerror(-r));
++			}
++			dbg_log("update %s done\n", NET_CONFIG_FILE);
++		}
++	}
++
++	return 0;
++}
++
++/* */
++
++static int process_netconf_line(char *var, char *val, void *data)
++{
++	struct option *p;
++
++	for (p = (struct option *)data; p->conf_var[0] != 0; ++p) {
++		if (strcmp(p->conf_var, var) == 0) {
++			strncpy(p->val, val, sizeof(p->val) - 1);
++			p->val[sizeof(p->val) - 1] = 0;
++		}
++	}
++	return 1;
++}
++
++static char *cfg_outbuf = 0;
++static int cfg_outbuf_sz = 0;
++static int cfg_outbuf_ptr = 0;
++
++static int cfg_append(const char *fmt, ...)
++{
++	const int buf_sz_grow = 1024;
++	char *new_outbuf;
++	int rq_sz;
++	int new_sz;
++	va_list args;
++
++	if (cfg_outbuf_sz < 0) {
++		return -1;
++	}
++
++	va_start(args, fmt);
++	rq_sz = vsnprintf(0, 0, fmt, args);
++	va_end(args);
++	new_sz = cfg_outbuf_ptr + rq_sz + 1;
++	if (new_sz > cfg_outbuf_sz) {
++		new_outbuf = realloc(cfg_outbuf, new_sz + buf_sz_grow);
++		if (new_outbuf == 0) {
++			free(cfg_outbuf);
++			cfg_outbuf_sz = -1;
++			cfg_outbuf_ptr = 0;
++			report_error("alloc of %d bytes failed", new_sz + buf_sz_grow);
++			return -1;
++		}
++		cfg_outbuf = new_outbuf;
++		cfg_outbuf_sz = new_sz + buf_sz_grow;
++	}
++	va_start(args, fmt);
++	vsnprintf(cfg_outbuf + cfg_outbuf_ptr, rq_sz + 1, fmt, args);
++	va_end(args);
++	cfg_outbuf_ptr = new_sz - 1;
++	return rq_sz;
++}
++
++#define XREMATCH(dst, rm, buf) \
++	do { \
++		if (rm.rm_so >= 0) { \
++			r = rm.rm_eo - rm.rm_so; \
++			dst = malloc(r + 1); \
++			if (dst == 0) { \
++				report_error("alloc %d bytes failed", r + 1); \
++				return -1; \
++			} \
++			strncpy(dst, buf + rm.rm_so, r); \
++			dst[r] = 0; \
++		} else { \
++			dst = 0; \
++		} \
++	} while (0)
++
++static int prepare_firewall_config(void) 
++{
++	char *lbuf;
++	regex_t rl, rh;
++	regmatch_t rm[6];
++	int res;
++	char *proto, *port, *filter, *hosts, *hiter, *host;
++	char errbuf[BUFSIZ];
++	int f1, f2;
++	FILE *f;
++	int r;
++	struct option *opt;
++
++	r = wc_conf_file_read(NET_CONFIG_FILE, process_netconf_line, netconf_opts);
++	if (r) {
++		report_error("failed to read %s config file", NET_CONFIG_FILE);
++		return -1;
++	}
++	for (opt = netconf_opts; opt->conf_var[0] != 0; ++opt) {
++		dbg_log("%s=%s (%s)\n", opt->conf_var, opt->val, opt->json_var);
++	}
++	
++	if ((res = regcomp(&rl, "^#*\\s*(all|tcp|udp)\\s*=\\s*([0-9]+)\\s*,\\s*(on|off)\\s*(,\\s*(.*)|)$", REG_EXTENDED)) != 0) {
++		regerror(res, &rl, errbuf, BUFSIZ);
++		report_error( "regcomp: %s", errbuf);
++		return -1;
++	}
++
++	if (regcomp(&rh, "([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+|[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+)\\s*(,\\s*.*|)", REG_EXTENDED) != 0) {
++		regerror(res, &rh, errbuf, BUFSIZ);
++		report_error( "regcomp: %s", errbuf);
++		return -1;
++	}
++
++	f = fopen(FIREWALL_CONF, "rt");
++	if (f == 0) {
++		report_error( "open %s failed: %s", FIREWALL_CONF, strerror(errno));
++		return -1;
++	}
++
++	cfg_append("{");
++	f1 = 1;
++	dbg_log("prepare_firewall_config\n");
++	while ((r = xread(f, &lbuf, "\n\r")) > 0) {
++		if (regexec(&rl, lbuf, sizeof(rm) / sizeof(*rm), rm, 0) != REG_NOMATCH) {
++			if (lbuf[0] == '#') {
++			} else {
++				XREMATCH(proto, rm[1], lbuf);
++				XREMATCH(port, rm[2], lbuf);
++				XREMATCH(filter, rm[3], lbuf);
++				XREMATCH(hosts, rm[5], lbuf);
++				if (proto && port && filter) {
++					if (f1) {
++						f1 = 0;
++						cfg_append("\"ports\":[");
++					} else {
++						cfg_append(",");
++					}
++					cfg_append("{\"proto\":\"%s\",\"port\":\"%s\",\"filter\":\"%s\"", proto, port, filter);
++					if (hosts != 0) {
++						hiter = hosts;
++						f2 = 1;
++						cfg_append(",\"hosts\":[");
++						for (;;) {
++							if (regexec(&rh, hiter, 3, rm, 0) != REG_NOMATCH) {
++								if (f2) {
++									f2 = 0;
++								} else {
++									cfg_append(",");
++								}
++								XREMATCH(host, rm[1], hosts);
++								cfg_append("\"%s\"", host);
++								free(host);
++								if (rm[2].rm_eo == rm[2].rm_so) {
++									break;
++								}
++								hiter += rm[2].rm_so;
++							} else {
++								break;
++							}
++						}
++						cfg_append("]");
++					}
++				}
++				cfg_append("}");
++				free(proto);
++				free(port);
++				free(filter);
++				free(hosts);
++			}
++
++
++		}
++		free(lbuf);
++	}
++	fclose(f);
++	regfree(&rl);
++	regfree(&rh);
++	if (!f1) {
++		cfg_append("]");
++	}
++        for (opt = netconf_opts; opt->conf_var[0] != 0; ++opt) {
++		if (opt->val[0] != 0) {
++			if (!f1) {
++				cfg_append(",");
++			} else {
++				f1 = 0;
++			}
++			cfg_append("\"%s\":\"%s\"", opt->json_var, opt->val);
++		}
++	}
++	if (!f1) {
++		cfg_append(",\"status\":\"ok\"");
++	}
++	cfg_append("}");
++
++	return 0;
++}
++
++static void dump_env(void)
++{
++#if 0
++	char **p;
++	extern char **environ;
++	for (p = environ; *p != 0; ++p) {
++		dbg_log("%s\n", *p);
++	}
++#endif
++}
++
++static char cmd[32];
++
++void wc_net_router_process(wc_page_data_t *data, int submitted)
++{
++	int r;
++
++	status_buf = data->status_buf;
++	status_buf_sz = sizeof(data->status_buf);
++
++	dbg_log("router_process: %s\n", cgiRequestMethod);
++	dump_env();
++
++	cmd[0] = 0;
++
++	if (cgiFormString("cmd", cmd, sizeof(cmd)) == cgiFormSuccess) {
++		dbg_log("router_process: cmd=%s\n", cmd);
++		if (strcmp(cmd, "load") == 0) {
++			dbg_log("router_process: prepare_firewall_config\n");
++			prepare_firewall_config();
++			data->ct_id = WC_CT_TEXT;
++			strcpy(data->content_type, "application/json");
++		} else if (strcmp(cmd, "store") == 0) {
++			if (strcasecmp(cgiRequestMethod, "POST") != 0 || strcmp(cgiContentType, "application/json") != 0) {
++				/* invalid request */
++				snprintf(data->status_buf, sizeof(data->status_buf), "Invalid request or bad content-type");
++				return;
++			}
++			r = store_firewall_config();
++			if (r >= 0) {
++				system("/etc/rc.fw reload-ports");
++
++				snprintf(data->status_buf, sizeof(data->status_buf), "%s", WC_STR_NET_ROUTER_SAVE_DONE_MSG);
++			}
++			data->ct_id = WC_CT_TEXT;
++			strcpy(data->content_type, "application/json");
++		}
++	} else {
++		wc_form_enable(WC_FBA_RIGHT, &wc_btn_ok, &wc_btn_reset, NULL);
++	}
++	return;
++}
++
++void wc_net_router_post_process(wc_page_data_t *data)
++{
++	status_buf = data->status_buf;
++	status_buf_sz = sizeof(data->status_buf);
++
++	dbg_log("router_post_process: cmd=%s\n", cmd);
++
++	if (strcmp(cmd, "load") == 0) {
++		fflush(cgiOut);
++		if (cfg_outbuf_ptr > 0) {
++			dbg_log("sending %d bytes\n", cfg_outbuf_ptr);
++			fprintf(cgiOut, "%s", cfg_outbuf);
++			dbg_log("%s\n", cfg_outbuf);
++		} else {
++			dbg_log("status: %s\n", data->status_buf);
++			fprintf(cgiOut, "{\"status\": \"%s\"}", data->status_buf);
++		}
++	} else if (strcmp(cmd, "store") == 0) {
++		fprintf(cgiOut, "{\"status\": \"%s\"}", data->status_buf);
++	}
++}
++#endif
+Index: wc/wc_net_ids.h
+===================================================================
+--- webconfig.old/wc/wc_net_ids.h	(.../tags/20130930-owen-1.6)	(revision 0)
++++ webconfig.new/wc/wc_net_ids.h	(.../trunk)	(revision 2345)
+@@ -0,0 +1,8 @@
++#ifndef _WC_NET_IDS_H_
++#define _WC_NET_IDS_H_
++
++extern void wc_net_ids_process(wc_page_data_t *data, int submitted);
++extern void wc_net_ids_post_process(wc_page_data_t *data);
++
++#endif /* _WC_NET_WD_H_*/
++
+Index: wc/wc_net_router.h
+===================================================================
+--- webconfig.old/wc/wc_net_router.h	(.../tags/20130930-owen-1.6)	(revision 0)
++++ webconfig.new/wc/wc_net_router.h	(.../trunk)	(revision 2345)
+@@ -0,0 +1,8 @@
++#ifndef __WC_NET_ROUTER_H
++#define __WC_NET_ROUTER_H
++
++void wc_net_router_process(wc_page_data_t *data, int submitted);
++void wc_net_router_post_process(wc_page_data_t *data);
++
++
++#endif
+\ No newline at end of file
+Index: wc/wc_net.h
+===================================================================
+--- webconfig.old/wc/wc_net.h	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/wc/wc_net.h	(.../trunk)	(revision 2345)
+@@ -5,6 +5,8 @@
+ 
+ #define RC_NET_DIR		"/etc"
+ #define NET_CONFIG_FILE "/etc/network.conf"
++#define IDS_CONFIG_FILE "/etc/net_ids.conf"
++#define WD_CONFIG_FILE "/etc/net_watchdog.conf"
+ //#define NET_CONFIG_FILE "/home/alex/local/www/cgi/network.conf"
+ #define CFG_DHCP		"DHCP"
+ #define CFG_HOST_NAME	"HOST_NAME"
+@@ -18,6 +20,9 @@
+ #define WC_NET_SP_NAME_GPRS		"gprs"
+ #define WC_NET_SP_NAME_VPN		"vpn"
+ #define WC_NET_SP_NAME_DDNS		"ddns"
++#define WC_NET_SP_NAME_WD		"wd"
++#define WC_NET_SP_NAME_IDS		"ids"
++#define WC_NET_SP_NAME_ROUTER		"router"
+ 
+ #define CFG_AUTO_GPRS				"GPRS_AUTO"
+ #define CFG_AUTO_VPN				"VPN_AUTO"
+@@ -39,6 +44,8 @@
+ #define PPP_LOG_DIR					"/var/log"
+ #define PPP_MAX_DIR_SIZE			17
+ 
++#define FIREWALL_CONF			"/etc/firewall.conf"
++
+ #define CFG_WC_PIN				"WC_PIN"
+ //#define CFG_WC_PIN_WAIT_SEC	"WC_PIN_WAIT_SEC"
+ 
+Index: wc/wc_strings_ru.h
+===================================================================
+--- webconfig.old/wc/wc_strings_ru.h	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/wc/wc_strings_ru.h	(.../trunk)	(revision 2345)
+@@ -5,6 +5,7 @@
+ #define WC_STR_PLC_NAME_HE5684	"HE5684"
+ #define WC_STR_PLC_NAME_MODUS5684	"Модус 5684"
+ #define WC_STR_PLC_NAME_PLC304	"ПЛК 304"
++#define WC_STR_PLC_NAME_PLC308  "ПЛК 308"
+ #define WC_STR_PLC_NAME_PLC323	"ПЛК 323"
+ #define WC_STR_TITLE_FMT	"Настройки %s"
+ 
+@@ -90,6 +91,8 @@
+ #define WC_STR_NET_VPN		"VPN"
+ #define WC_STR_NET_DDNS	"DDNS"
+ #define WC_STR_NET_ROUTE	"Маршрутизация"
++#define WC_STR_NET_WD "Контроль наличия сети"
++#define WC_STR_NET_IDS "Сервер идентификации"
+ 
+ #define WC_STR_NET_0		"Имя хоста"
+ #define WC_STR_NET_1		"DHCP"
+@@ -142,6 +145,22 @@
+ 
+ #define WC_STR_DDNS_DISABLED				"Выключено"
+ 
++#define WC_STR_WD_PERIOD		"Период проверки, минут"
++#define WC_STR_WD_HOSTS		"Хосты"
++#define WC_STR_WD_COUNT		"Число ошибок"
++#define WC_STR_WD_TIMEOUT		"Таймаут ответа, секунд"
++
++#define WC_STR_IDS_ENABLED              "Включено"
++#define WC_STR_IDS_SERVER		"Адрес сервера (хост:порт)"
++#define WC_STR_IDS_ID			"Идентификатор устройства"
++#define WC_STR_IDS_LISTEN "Пассивный режим"
++#define WC_STR_IDS_PORT                 "Локальный порт"
++#define WC_STR_IDS_ERROR_TIMEOUT	"Ожидание после ошибки, секунд"
++#define WC_STR_IDS_MAX_LOG_SIZE         "Максимальный размер журнала"
++#define WC_STR_IDS_VIEW_LOG         	"Просмотр журнала"
++#define WC_STR_IDS_LOG_TITLE		"Журнал подключений к серверу идентификации"
++#define WC_STR_IDS_CLEAR_LOG		"Очистить журнал"
++
+ #define WC_STR_SEC_0		"Введите пароль"
+ #define WC_STR_SEC_1		"Подтвердите пароль"
+ 
+@@ -179,6 +198,19 @@
+ 
+ #define WC_STR_STATUS_DDNS_UPDATING		"Обновляется состояние службы Dyn DNS..."
+ 
++#define WC_STR_ERR_INVAL_WD_PERIOD	"некорректное значение периода проверки"
++#define WC_STR_ERR_INVAL_WD_VALUE	"некорректное значение параметра"
++#define WC_STR_ERR_WD_CFG_EDIT		"ошибка сохранения конфигурации"
++
++#define WC_STR_ERR_IDS_CFG_EDIT		"ошибка сохранения конфигурации"
++#define WC_STR_ERR_INVAL_IDS_SERVER	"некорректное значение адреса сервера"
++#define WC_STR_ERR_INVAL_IDS_ID	"некорректное значение идентификатора"
++#define WC_STR_ERR_INVAL_IDS_ERROR_TIMEOUT "некорректное значение параметра"
++#define WC_STR_ERR_INVAL_IDS_PORT "некорректное значение порта"
++#define WC_STR_ERR_INVAL_IDS_MAX_LOG_SIZE "некорректное значение параметра"
++#define WC_STR_ERR_INVAL_IDS_ENABLED    "некорректное значение параметра"
++#define WC_STR_ERR_INVAL_IDS_LISTEN "некорректное значение параметра"
++
+ /* ppp statuses */
+ #define WC_STR_ERR_PPP_ADD			"Ошибка при добавлении профиля: %s."
+ #define WC_STR_ERR_PPP_EDIT			"Ошибка при обновлении профиля '%s': %s."
+@@ -216,5 +248,23 @@
+ 
+ #define WC_STR_ERR_PING_START				"Ошибка старта ping: некорректное Имя или IP адрес"
+ 
++/* router */
++
++#define WC_STR_NET_ROUTER			"Маршрутизатор"
++#define WC_STR_NET_ROUTER_FORWARD		"Доступ в интернет"
++#define WC_STR_NET_ROUTER_PROTO			"Протокол"
++#define WC_STR_NET_ROUTER_PORT			"Порт"
++#define WC_STR_NET_ROUTER_FILTER		"Фильтр"
++#define WC_STR_NET_ROUTER_HOSTS			"Адреса"
++#define WC_STR_NET_ROUTER_ADD_HOST		"Добавить"
++#define WC_STR_NET_ROUTER_CHANGE_HOST		"Изменить"
++#define WC_STR_NET_ROUTER_DELETE_HOST		"Удалить"
++#define WC_STR_NET_ROUTER_PORT_FILTER		"Фильтрация портов"
++#define WC_STR_NET_ROUTER_SAVE_CONFIG		"Сохранение конфигурации"
++#define WC_STR_NET_ROUTER_LOAD_CONFIG		"Загрузка конфигурации"
++#define WC_STR_NET_ROUTER_SAVE_MSG		"Конфигурация сохранена<br>Настройки вступят в силу после переподключения GPRS сессии"
++#define WC_STR_NET_ROUTER_SAVE_ERR_MSG		"сбой сохранения конфигурации"
++#define WC_STR_NET_ROUTER_SAVE_DONE_MSG		"ok"
++
+ #endif /*_WC_STRINGS_LANG_H_*/
+ 
+Index: wc/wc_net_ppp.c
+===================================================================
+--- webconfig.old/wc/wc_net_ppp.c	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/wc/wc_net_ppp.c	(.../trunk)	(revision 2345)
+@@ -508,7 +508,7 @@
+ 	char path_buf[WC_PATH_MAX];
+ 	char chunk[256];
+ 	FILE *fp;
+-	int r;
++//	int r;
+ 	ssize_t count;
+ 
+ 	if (ppp.mode != PPP_MODE_LOG) {
+@@ -527,7 +527,7 @@
+ 		while (!feof(fp)) {
+ 			count = fread(chunk, 1, sizeof(chunk), fp);
+ 			if (count > 0)  {
+-				r = fwrite(chunk, count, 1, cgiOut);
++				/*r = */fwrite(chunk, count, 1, cgiOut);
+ 				//dbg_console("read and written %d bytes from offs=%d: %d\n", count, ppp.log_offs, r);
+ 			}
+ 			if (count < sizeof(chunk)) {
+@@ -1406,8 +1406,8 @@
+ 
+ static int read_network_conf_var(char *var, char *val, void *data)
+ {
+-	size_t len;
+-	len = strlen(val);
++//	size_t len;
++//	len = strlen(val);
+ 	const char *auto_var;
+ 
+ 	auto_var = get_ppp_auto_var();
+Index: wc/wc_strings_en.h
+===================================================================
+--- webconfig.old/wc/wc_strings_en.h	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/wc/wc_strings_en.h	(.../trunk)	(revision 2345)
+@@ -4,6 +4,7 @@
+ #define WC_STR_PLC_NAME_HE5684	"HE5684"
+ #define WC_STR_PLC_NAME_MODUS5684	"Modus 5684"
+ #define WC_STR_PLC_NAME_PLC304	"PLC 304"
++#define WC_STR_PLC_NAME_PLC308  "PLC 308"
+ #define WC_STR_PLC_NAME_PLC323	"PLC 323"
+ #define WC_STR_CHARSET		"iso-8859-1"
+ #define WC_STR_TITLE_FMT	"%s Setup"
+@@ -90,6 +91,8 @@
+ #define WC_STR_NET_VPN		"VPN"
+ #define WC_STR_NET_DDNS	"DDNS"
+ #define WC_STR_NET_ROUTE	"Routing"
++#define WC_STR_NET_WD "Network watchdog"
++#define WC_STR_NET_IDS "ID server"
+ 
+ #define WC_STR_NET_0		"Host name"
+ #define WC_STR_NET_1		"DHCP"
+@@ -142,6 +145,23 @@
+ 
+ #define WC_STR_DDNS_DISABLED				"Disabled"
+ 
++#define WC_STR_WD_PERIOD	"Check period (sec.)"
++#define WC_STR_WD_HOSTS		"Hosts to ping"
++#define WC_STR_WD_COUNT		"Ping count"
++#define WC_STR_WD_TIMEOUT	"Ping timeout (sec.)"
++
++#define WC_STR_IDS_SERVER		"Server address (host:port)"
++#define WC_STR_IDS_ID			"Device ID"
++#define WC_STR_IDS_PORT "Local port"
++#define WC_STR_IDS_LISTEN "Listen mode"
++#define WC_STR_IDS_ERROR_TIMEOUT	"Wait after error (sec.)"
++#define WC_STR_IDS_ENABLED              "Enabled"
++#define WC_STR_IDS_MAX_LOG_SIZE         "Max log size"
++#define WC_STR_IDS_VIEW_LOG         	"View log"
++#define WC_STR_IDS_CLEAR_LOG		"Clear log"
++
++#define WC_STR_IDS_LOG_TITLE		"View IDS log"
++
+ #define WC_STR_SEC_0		"Enter password"
+ #define WC_STR_SEC_1		"Re-type password"
+ 
+@@ -179,6 +199,19 @@
+ 
+ #define WC_STR_STATUS_DDNS_UPDATING		"Updating Dyn DNS service state..."
+ 
++#define WC_STR_ERR_INVAL_WD_PERIOD	"invalid watchdog period value"
++#define WC_STR_ERR_INVAL_WD_VALUE	"invalid option"
++#define WC_STR_ERR_WD_CFG_EDIT		"error saving config"
++
++#define WC_STR_ERR_IDS_CFG_EDIT		"error saving config"
++#define WC_STR_ERR_INVAL_IDS_SERVER	"invalid server address"
++#define WC_STR_ERR_INVAL_IDS_ID	"invalid device id"
++#define WC_STR_ERR_INVAL_IDS_ERROR_TIMEOUT "invalid option"
++#define WC_STR_ERR_INVAL_IDS_PORT "invalid port value"
++#define WC_STR_ERR_INVAL_IDS_MAX_LOG_SIZE "invalid option"
++#define WC_STR_ERR_INVAL_IDS_ENABLED    "invalid option"
++#define WC_STR_ERR_INVAL_IDS_LISTEN "invalid option"
++
+ /* ppp statuses */
+ #define WC_STR_ERR_PPP_ADD			"Failed to add a new profile: %s."
+ #define WC_STR_ERR_PPP_EDIT			"Failed to update profile '%s': %s."
+@@ -216,5 +249,26 @@
+ 
+ #define WC_STR_ERR_PING_START				"Failed to start ping: host IP/name is invalid"
+ 
++
++/* router */
++
++#define WC_STR_NET_ROUTER			"Router"
++#define WC_STR_NET_ROUTER_FORWARD		"Forward"
++#define WC_STR_NET_ROUTER_PROTO			"Proto"
++#define WC_STR_NET_ROUTER_PORT			"Port"
++#define WC_STR_NET_ROUTER_FILTER		"Filter"
++#define WC_STR_NET_ROUTER_HOSTS			"Hosts"
++#define WC_STR_NET_ROUTER_ADD_HOST		"Add"
++#define WC_STR_NET_ROUTER_CHANGE_HOST		"Update"
++#define WC_STR_NET_ROUTER_DELETE_HOST		"Delete"
++#define WC_STR_NET_ROUTER_PORT_FILTER		"Port filter"
++#define WC_STR_NET_ROUTER_SAVE_CONFIG           "Saving config"
++#define WC_STR_NET_ROUTER_LOAD_CONFIG		"Loading config"
++#define WC_STR_NET_ROUTER_SAVE_MSG		"Configuration saved<br>Settings will be applied after GPRS session restart"
++
++#define WC_STR_NET_ROUTER_SAVE_ERR_MSG		"failed to save config"
++#define WC_STR_NET_ROUTER_SAVE_DONE_MSG		"ok"
++
++
+ #endif /*_WC_STRINGS_LANG_H_*/
+ 
+Index: wc/wc_net_wd.c
+===================================================================
+--- webconfig.old/wc/wc_net_wd.c	(.../tags/20130930-owen-1.6)	(revision 0)
++++ webconfig.new/wc/wc_net_wd.c	(.../trunk)	(revision 2345)
+@@ -0,0 +1,334 @@
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <unistd.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <errno.h>
++#include <dirent.h>
++#include <ctype.h>
++#include "cgic.h"
++
++#include "wc_conf_file.h"
++#include "wc_tpl.h"
++#include "wc_page.h"
++#include "wc_net.h"
++#include "wc_net_wd.h"
++
++#include "wc_conf_option.h"
++
++#include "wc_strings.h"
++
++#ifdef WC_CONFIG_MENU_NET_WD
++
++#define WD_HOSTS_MAX_LEN	255
++#define WD_PERIOD_MAX_LEN	10
++#define WD_COUNT_MAX_LEN	10
++#define WD_TIMEOUT_MAX_LEN	10
++
++typedef struct wd_conf_t {
++        char hosts[WD_HOSTS_MAX_LEN + 1];
++        char period[WD_PERIOD_MAX_LEN + 1];
++        char count[WD_COUNT_MAX_LEN + 1];
++        char timeout[WD_TIMEOUT_MAX_LEN + 1];
++} wd_conf_t;
++
++static struct wd_data {
++	wc_page_data_t *pdata;
++	wd_conf_t conf;
++} wd;
++
++static struct wc_conf_option conf_options[] = {
++	{ .name = "PERIOD", 
++          .cgi_name = "wd_period", 
++          .value = wd.conf.period, 
++          .val_size = sizeof(wd.conf.period), 
++          .def_value = "5", 
++          .quot = 0 },
++	{ .name = "HOSTS", 
++          .cgi_name = "wd_hosts", 
++          .value = wd.conf.hosts, 
++          .val_size = sizeof(wd.conf.hosts), 
++          .def_value = "ya.ru;google.com",
++	  .quot = 1 },
++	{ .name = "TIMEOUT", 
++          .cgi_name = "wd_timeout", 
++          .value = wd.conf.timeout, 
++          .val_size = sizeof(wd.conf.timeout), 
++          .def_value = "20",
++          .quot = 0 },
++	{ .name = "FAIL_COUNT", 
++          .cgi_name = "wd_count", 
++          .value = wd.conf.count, 
++          .val_size = sizeof(wd.conf.count), 
++          .def_value = "3",
++          .quot = 0 },
++};
++
++/* Commands */
++static void do_cmd_wd_cfg(char *arg);
++static wc_tpl_cmd_t wd_cfg_cmd = {
++	.name = "wd_cfg", .handler = do_cmd_wd_cfg
++};
++
++static void do_cmd_wd_def_cfg(char *arg);
++static wc_tpl_cmd_t wd_def_cfg_cmd = {
++	.name = "wd_def_cfg", .handler = do_cmd_wd_def_cfg,
++};
++
++/* Vars */
++static const char *get_var_wd(char *field);
++static wc_tpl_var_t wd_vars[] = {
++	{ .name = "wd", .get = &get_var_wd },
++	{ .name = NULL, },
++};
++
++/* local methods */
++static int checkbox_is_on(const char *value);
++static int get_current_settings(wc_page_data_t *data);
++static int apply_new_settings(wc_page_data_t *data);
++
++static const char *get_var_wd(char *field)
++{
++	int i;
++
++	if (!field) {
++		return NULL;
++	}
++
++	for (i = 0; i < ARRAY_SIZE(conf_options); i++) {
++		if (strcmp(field, conf_options[i].cgi_name) == 0) {
++			return conf_options[i].value;
++		}
++	}
++
++	return NULL;
++}
++
++
++static int process_cfg_line(char *var, char *val, void *data)
++{
++	int len, buf_size, i;
++	char *pval = NULL;
++
++ 	len = strlen(val);
++	
++	for (i = 0; i < ARRAY_SIZE(conf_options); i++) {
++		if (strcmp(var, conf_options[i].name) == 0) {
++			pval = conf_options[i].value;
++			buf_size = conf_options[i].val_size - 1;
++			break;
++		}
++	}
++	if (pval) {
++		if (len >= buf_size) {
++			strcpy(pval, "");	/* NOTE: it fits any of the vals buffers */
++		} else {
++			strcpy(pval, val);
++		}
++	}
++
++	
++	return 1;
++}
++
++struct wd_edit_data {
++	int number;
++	struct wc_conf_option *options;
++};
++
++static int edit_wd_conf_line(wc_conf_parse_data_t *parse_data, void *data)
++{
++	FILE *fp = parse_data->fp_out;
++	struct wd_edit_data *d = (struct wd_edit_data *)data;
++	int i;
++
++	if (parse_data->type == WC_CLT_WRONG) {
++		return 1;	/* remove wrong lines */
++	}
++
++	if (parse_data->type == WC_CLT_EOF || parse_data->type == WC_CLT_CREATED) {
++		for (i = 0; i < d->number; i++) {
++			if (d->options[i].set == 0) {
++				if (d->options[i].quot) {
++					fprintf(fp, "%s=\"%s\"\n", d->options[i].name, d->options[i].value);
++				} else {
++					fprintf(fp, "%s=%s\n", d->options[i].name, d->options[i].value);
++				}
++			}
++		}		
++		return 0;
++	}
++
++	if (parse_data->type == WC_CLT_VAR) {
++		for (i = 0; i < d->number; i++) {
++			if (d->options[i].name && strlen(d->options[i].name) == parse_data->var_len && memcmp(d->options[i].name, parse_data->var, parse_data->var_len) == 0) {
++				if (d->options[i].quot) {
++					fprintf(fp, "%s=\"%s\"\n", d->options[i].name, d->options[i].value);
++				} else {
++					fprintf(fp, "%s=%s\n", d->options[i].name, d->options[i].value);
++				}
++				d->options[i].set = 1;
++				return 1;
++			}
++		}
++	}
++	fprintf(fp, "%s", parse_data->line);
++	return 1;
++}
++
++static int wd_update_config(void)
++{
++	int r;
++	struct wd_edit_data data = { .number = ARRAY_SIZE(conf_options), conf_options };
++
++	for (r = 0; r < data.number; r++) {
++		data.options[r].set = 0;
++	}
++
++	r = wc_conf_file_edit(WD_CONFIG_FILE, edit_wd_conf_line, &data, 1);
++	if (r) {
++		sprintf(wd.pdata->status_buf, "%s: %s (%s): %s", 
++				WC_STR_STATUS_ERROR, WC_STR_ERR_WD_CFG_EDIT,
++				WD_CONFIG_FILE, strerror(-r));
++	}
++	
++	return r;
++}
++
++/* --- Interface methods --- */
++
++void wc_net_wd_process(wc_page_data_t *data, int submitted)
++{
++	wd.pdata = data;
++
++	wc_tpl_vars_register(wd_vars);
++	wc_tpl_cmd_register(&wd_cfg_cmd);
++	wc_tpl_cmd_register(&wd_def_cfg_cmd);
++
++	wc_form_enable(WC_FBA_RIGHT, &wc_btn_ok, &wc_btn_reset, NULL);
++
++	if (submitted) {
++		/* get data from the request .......???? */
++		apply_new_settings(data);
++	}
++
++	/* read ?????? and extract current settings */
++	get_current_settings(data);
++}
++
++static int get_current_settings(wc_page_data_t *data)
++{
++	int r;
++	/* read rmsync config */
++	r = wc_conf_file_read(WD_CONFIG_FILE, &process_cfg_line, NULL);
++	if (r) {
++		sprintf(data->status_buf, "Error: failed to read %s config file", WD_CONFIG_FILE);
++		return -1;
++	}
++	for (r = 0; r < ARRAY_SIZE(conf_options); r++) {
++		if (strlen(conf_options[r].value) == 0) {
++			snprintf(conf_options[r].value, conf_options[r].val_size, "%s", conf_options[r].def_value);
++		}
++	}
++	return 0;
++}
++
++static int apply_new_settings(wc_page_data_t *data)
++{
++	cgiFormResultType result;
++	wd_conf_t conf;
++	struct wc_page_conf page_conf[] = {
++		{ .cgi_name = "wd_period", .value = conf.period, .val_size = sizeof(conf.period), .check_number = 1, .error_str = WC_STR_ERR_INVAL_WD_PERIOD, .checkbox = 0 },
++		{ .cgi_name = "wd_hosts", .value = conf.hosts, .val_size = sizeof(conf.hosts), .check_number = 0, .error_str = WC_STR_ERR_INVAL_WD_VALUE, .checkbox = 0 },
++	 	{ .cgi_name = "wd_timeout", .value = conf.timeout, .val_size = sizeof(conf.timeout), .check_number = 1, .error_str = WC_STR_ERR_INVAL_WD_VALUE, .checkbox = 0 },
++		{ .cgi_name = "wd_count", .value = conf.count, .val_size = sizeof(conf.count), .check_number = 1, .error_str = WC_STR_ERR_INVAL_WD_VALUE, .checkbox = 0 },
++	};
++        int i,r;
++
++	for (i = 0; i < ARRAY_SIZE(page_conf); i++) {
++                if (page_conf[i].checkbox) {
++			result = cgiFormString(page_conf[i].cgi_name, page_conf[i].value, page_conf[i].val_size);
++			if (result == cgiFormNotFound) {
++				strcpy(page_conf[i].value, "0");
++			} else if (result != cgiFormSuccess && result != cgiFormEmpty) {
++				snprintf(data->status_buf, sizeof(data->status_buf), "%s: %s", WC_STR_STATUS_ERROR, page_conf[i].error_str);
++				return -1;
++			} else {
++				snprintf(page_conf[i].value, page_conf[i].val_size, "%u", checkbox_is_on(page_conf[i].value));
++			}
++                } else {
++			result = cgiFormString(page_conf[i].cgi_name, page_conf[i].value, page_conf[i].val_size);
++                	if (result != cgiFormSuccess && result != cgiFormEmpty) {
++				snprintf(data->status_buf, sizeof(data->status_buf), "%s: %s", WC_STR_STATUS_ERROR, page_conf[i].error_str);
++				return -1;
++			}
++		}
++		if (page_conf[i].check_number) {
++			r = strtoul(page_conf[i].value, 0, 0);
++			if (r == 0 && page_conf[i].value[0] != '0') {
++				snprintf(data->status_buf, sizeof(data->status_buf), "%s: %s", WC_STR_STATUS_ERROR, page_conf[i].error_str);
++				return -1;
++			}
++		}
++	}
++	for (i = 0; i < ARRAY_SIZE(page_conf); i++) {
++		for (r = 0; r < ARRAY_SIZE(conf_options); r++) {
++			if (strcmp(page_conf[i].cgi_name, conf_options[r].cgi_name) == 0) {
++				strcpy(conf_options[i].value, page_conf[i].value);
++				break;
++			}
++		}
++	}
++	r = wd_update_config();
++	if (!r) {
++		char sys_cmd[256];
++		snprintf(sys_cmd, sizeof(sys_cmd), "%s", "/usr/bin/net_watchdog.sh -reload");
++		system(sys_cmd);
++	}
++	return r;
++}
++
++static void do_cmd_wd_cfg(char *arg)
++{
++	int i;
++	fprintf(cgiOut, "var wd={");
++	for (i = 0; i < ARRAY_SIZE(conf_options); i++) {
++  		fprintf(cgiOut, "%s:", conf_options[i].cgi_name);
++		if (conf_options[i].checkbox) {
++   			fprintf(cgiOut, "%u", checkbox_is_on(conf_options[i].value));
++		} else {
++			fprintf(cgiOut, "'%s'", conf_options[i].value);
++		}
++		if (i != ARRAY_SIZE(conf_options) - 1) {
++			fprintf(cgiOut, ",");
++		}
++	}
++	fprintf(cgiOut, "};");
++}
++
++static void do_cmd_wd_def_cfg(char *arg)
++{
++	int i;
++	fprintf(cgiOut, "var wd_def={");
++	for (i = 0; i < ARRAY_SIZE(conf_options); i++) {
++  		fprintf(cgiOut, "%s:", conf_options[i].cgi_name);
++		if (conf_options[i].checkbox) {
++   			fprintf(cgiOut, "%u", checkbox_is_on(conf_options[i].value));
++		} else {
++			fprintf(cgiOut, "'%s'", conf_options[i].value);
++		}
++		if (i != ARRAY_SIZE(conf_options) - 1) {
++			fprintf(cgiOut, ",");
++		}
++	}
++	fprintf(cgiOut, "};");
++}
++
++static int checkbox_is_on(const char *value)
++{
++	return strcasecmp(value, "on") == 0 || strcasecmp(value, "yes") == 0 || strcasecmp(value, "true") == 0 || strcasecmp(value, "1") == 0;
++}
++
++
++#endif
+Index: wc/wc_conf_option.h
+===================================================================
+--- webconfig.old/wc/wc_conf_option.h	(.../tags/20130930-owen-1.6)	(revision 0)
++++ webconfig.new/wc/wc_conf_option.h	(.../trunk)	(revision 2345)
+@@ -0,0 +1,26 @@
++#ifndef __WC_CONF_OPTION_H
++#define __WC_CONF_OPTION_H
++
++/* config file options */
++struct wc_conf_option {
++	const char *name;
++	const char *cgi_name;
++	const char *def_value;
++	int val_size;
++	int set;
++	int quot;
++	int checkbox;
++
++	char *value;
++};
++
++struct wc_page_conf {
++	const char *cgi_name;
++	char *value;
++	int val_size;
++	int check_number;
++	const char *error_str;
++        int checkbox;
++};
++
++#endif
+\ No newline at end of file
+Index: wc/wc_page_net.c
+===================================================================
+--- webconfig.old/wc/wc_page_net.c	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/wc/wc_page_net.c	(.../trunk)	(revision 2345)
+@@ -17,6 +17,15 @@
+ #ifdef WC_CONFIG_MENU_NET_DDNS
+ #include "wc_net_ddns.h"
+ #endif
++#ifdef WC_CONFIG_MENU_NET_WD
++#include "wc_net_wd.h"
++#endif
++#ifdef WC_CONFIG_MENU_NET_IDS
++#include "wc_net_ids.h"
++#endif
++#ifdef WC_CONFIG_MENU_NET_ROUTER
++#include "wc_net_router.h"
++#endif
+ 
+ #include "wc_strings.h"
+ 
+@@ -35,11 +44,27 @@
+ 		.process = wc_net_ppp_process,	.post_process = wc_net_ppp_post_process, },
+ #endif
+ 
++#ifdef WC_CONFIG_MENU_NET_ROUTER
++	{ .name = WC_NET_SP_NAME_ROUTER,	.title = WC_STR_NET_ROUTER,
++	  .process = wc_net_router_process,		.post_process = wc_net_router_post_process, },
++#endif
++
+ #ifdef WC_CONFIG_MENU_NET_DDNS
+ 	{ .name = WC_NET_SP_NAME_DDNS,		.title = WC_STR_NET_DDNS,
+ 		.process = wc_net_ddns_process,	.post_process = NULL, },
+ #endif
+ 
++#ifdef WC_CONFIG_MENU_NET_WD
++	{ .name = WC_NET_SP_NAME_WD,		.title = WC_STR_NET_WD,
++		.process = wc_net_wd_process,	.post_process = NULL, },
++#endif
++
++#ifdef WC_CONFIG_MENU_NET_IDS
++	{ .name = WC_NET_SP_NAME_IDS,		.title = WC_STR_NET_IDS,
++		.process = wc_net_ids_process,	.post_process = wc_net_ids_post_process, },
++#endif
++
++
+ 	{ .name = NULL, },
+ };
+ #endif
+Index: wc/wc_main.c
+===================================================================
+--- webconfig.old/wc/wc_main.c	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/wc/wc_main.c	(.../trunk)	(revision 2345)
+@@ -399,12 +399,12 @@
+ {
+ 	wc_menu_t *p = NULL;
+ 
++	dbg_log("cgiMain: entered\n");
+ /* see comments in wc_config.h */
+ #if USE_WC_CONF
+ 	/* read global config */
+ 	read_wc_conf();
+ #endif
+-
+ 	/* register vars */
+ 	wc_tpl_vars_register(tpl_vars);
+ 
+@@ -412,17 +412,20 @@
+ 	main_menu_register(pages);
+ 	p = &page_data.pages[page_data.index];
+ 
++	dbg_log("cgiMain: page_data.index=%d\n", page_data.index);
++
+ 	/* prepare common strings */
+ 	wc_strings_init(&page_data);
+ 
+ 	/* process page, note: if page has submenu it is registered in the processor */
+ 	if (p && p->process) {
+-		p->process(&page_data, 
+-					cgiFormSubmitClicked(WC_NAME_FORM_SUBMIT) == cgiFormSuccess);
++		p->process(&page_data, cgiFormSubmitClicked(WC_NAME_FORM_SUBMIT) == cgiFormSuccess);
+ 	}
+ 
+ 	/* render response */
+-	cgiHeaderContentType(page_data.content_type);
++	if (page_data.content_type[0] != '\0') {
++		cgiHeaderContentType(page_data.content_type);
++	}
+ 
+ 	if (page_data.ct_id == WC_CT_HTML) {
+ 		if (page_data.flags.popup_tpl) {
+Index: wc/wc_net_wd.h
+===================================================================
+--- webconfig.old/wc/wc_net_wd.h	(.../tags/20130930-owen-1.6)	(revision 0)
++++ webconfig.new/wc/wc_net_wd.h	(.../trunk)	(revision 2345)
+@@ -0,0 +1,7 @@
++#ifndef _WC_NET_WD_H_
++#define _WC_NET_WD_H_
++
++extern void wc_net_wd_process(wc_page_data_t *data, int submitted);
++
++#endif /* _WC_NET_WD_H_*/
++
+Index: wc/wc_strings.c
+===================================================================
+--- webconfig.old/wc/wc_strings.c	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/wc/wc_strings.c	(.../trunk)	(revision 2345)
+@@ -97,6 +97,48 @@
+ };
+ #endif
+ 
++#ifdef WC_CONFIG_MENU_NET_WD
++static const char *strings_net_wd[] = {
++	WC_STR_WD_PERIOD,
++	WC_STR_WD_HOSTS,
++	WC_STR_WD_TIMEOUT,
++	WC_STR_WD_COUNT,
++};
++#endif
++
++#ifdef WC_CONFIG_MENU_NET_IDS
++static const char *strings_net_ids[] = {
++        WC_STR_IDS_ENABLED,
++	WC_STR_IDS_SERVER,
++	WC_STR_IDS_ID,
++        WC_STR_IDS_PORT,
++	WC_STR_IDS_LISTEN,
++	WC_STR_IDS_ERROR_TIMEOUT,
++        WC_STR_IDS_MAX_LOG_SIZE,
++	WC_STR_IDS_VIEW_LOG,
++	WC_STR_IDS_CLEAR_LOG
++};
++#endif
++
++#ifdef WC_CONFIG_MENU_NET_ROUTER
++static const char *strings_net_router[] = {
++	WC_STR_NET_ROUTER,
++	WC_STR_NET_ROUTER_FORWARD,
++	WC_STR_NET_ROUTER_PROTO,
++	WC_STR_NET_ROUTER_PORT,
++	WC_STR_NET_ROUTER_FILTER,
++	WC_STR_NET_ROUTER_HOSTS,
++	WC_STR_NET_ROUTER_ADD_HOST,
++	WC_STR_NET_ROUTER_CHANGE_HOST,
++	WC_STR_NET_ROUTER_DELETE_HOST,
++	WC_STR_NET_ROUTER_PORT_FILTER,
++	WC_STR_STATUS_ERROR,
++	WC_STR_NET_ROUTER_SAVE_CONFIG,
++	WC_STR_NET_ROUTER_LOAD_CONFIG,
++	WC_STR_NET_ROUTER_SAVE_MSG,
++};
++#endif
++
+ static sub_strings_t strings_net[] = {
+ 	{ WC_NET_SP_NAME_MAIN,	strings_net_main,	ARRAY_SIZE(strings_net_main) },
+ #ifdef WC_CONFIG_MENU_NET_GPRS
+@@ -108,6 +150,15 @@
+ #ifdef WC_CONFIG_MENU_NET_DDNS
+ 	{ WC_NET_SP_NAME_DDNS,	strings_net_ddns,		ARRAY_SIZE(strings_net_ddns) },
+ #endif
++#ifdef WC_CONFIG_MENU_NET_WD
++	{ WC_NET_SP_NAME_WD,	strings_net_wd,		ARRAY_SIZE(strings_net_wd) },
++#endif
++#ifdef WC_CONFIG_MENU_NET_IDS
++	{ WC_NET_SP_NAME_IDS,	strings_net_ids,		ARRAY_SIZE(strings_net_ids) },
++#endif
++#ifdef WC_CONFIG_MENU_NET_ROUTER
++	{ WC_NET_SP_NAME_ROUTER, strings_net_router,		ARRAY_SIZE(strings_net_router) },
++#endif
+ };
+ 
+ static const char *strings_sec[] = {
+Index: wc/wc_debug.h
+===================================================================
+--- webconfig.old/wc/wc_debug.h	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/wc/wc_debug.h	(.../trunk)	(revision 2345)
+@@ -2,6 +2,22 @@
+ #define _WC_DEBUG_H_
+ 
+ #ifdef WC_DEBUG
++#include <stdio.h>
++#include <time.h>
++#include <sys/types.h>
++#include <unistd.h>
++#define dbg_log(format, ...) \
++	{ \
++		time_t tt; \
++		struct tm *t; \
++		FILE *flog = fopen("/tmp/wc.log", "at+"); \
++		if (flog != 0) { \
++			tt = time(&tt); \
++			t = localtime(&tt); \
++			fprintf(flog, "%04u/%02u/%02u %02u:%02u:%02u [%d]: " format , t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec, getpid(), ##__VA_ARGS__); \
++			fclose(flog); \
++		} \
++	}
+ #define dbg_console(format, ...) \
+ 	{ \
+ 		char buf[1024]; \
+@@ -10,6 +26,7 @@
+ 	}
+ #else
+ #define dbg_console(format, ...)
++#define dbg_log(format, ...)
+ #endif
+ 
+ #endif /* _WC_DEBUG_H_ */
+\ No newline at end of file
+Index: wc/wc_tpl.c
+===================================================================
+--- webconfig.old/wc/wc_tpl.c	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/wc/wc_tpl.c	(.../trunk)	(revision 2345)
+@@ -160,6 +160,7 @@
+ 	
+ 	tpl = fopen(full_fname, "r");
+ 	if (!tpl) {
++		fprintf(cgiOut, "%s<br>", full_fname);
+ 		return errno;
+ 	}
+ 
+@@ -499,7 +500,7 @@
+ 				break;
+ 		}
+ 		if (sub_result) {
+-			fprintf(cgiOut, "err processing sub-template");
++			fprintf(cgiOut, "err processing sub-template: (%s: %d)", pv.do_tpl, sub_result);
+ 		}
+ 	}
+ 	return 0;
+Index: wc/Makefile
+===================================================================
+--- webconfig.old/wc/Makefile	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/wc/Makefile	(.../trunk)	(revision 2345)
+@@ -1,10 +1,13 @@
+ VERSION=1.10.11
+ 
++#DEBUG=1
++
+ #make PLC=<config>:
+ #	OWEN_HE5684
+ #	OWEN_MODUS5684
+ #	OWEN_PLC304
+ #	OWEN_PLC304MSAN
++#	OWEN_PLC304_DEBET_E
+ #	OWEN_PLC323
+ ifneq ($(PLC), )
+ WC_DEFS=-D$(PLC)
+@@ -41,6 +44,7 @@
+ 
+ ifeq ($(DEBUG),1)
+ WC_DEFS+=-DWC_DEBUG
++CFLAGS+=-DCGICDEBUG=1
+ endif
+ 
+ SRC_setup=wc_tpl.c \
+@@ -49,12 +53,16 @@
+     wc_page_net.c \
+     wc_net_ppp.c \
+     wc_net_ddns.c \
++    wc_net_wd.c \
++    wc_net_ids.c \
++    wc_net_router.c \
+     wc_page_sec.c \
+     wc_page_plc.c \
+     wc_page_utils.c \
+     wc_utils_ping.c \
+     wc_strings.c \
+-    wc_conf_file.c
++    wc_conf_file.c \
++    jsmn.c
+ 
+ # make TEST=1 - enable test page
+ ifeq ($(TEST), 1)
+Index: wc/wc_config.h
+===================================================================
+--- webconfig.old/wc/wc_config.h	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/wc/wc_config.h	(.../trunk)	(revision 2345)
+@@ -3,6 +3,7 @@
+ 
+ /* --- common --- */
+ #define WC_CONFIG_MODEM_SPEED	115200
++#define WC_CONFIG_MENU_NET_ROUTER
+ 
+ /* --- HE5684 ---*/
+ #if defined(OWEN_HE5684)
+@@ -37,6 +38,31 @@
+ #define WC_CONFIG_MENU_NET_DDNS
+ #define WC_CONFIG_MENU_UTILS_PING
+ 
++#elif defined(OWEN_PLC308)
++#include "wc_strings_ru.h"
++#define WC_CONFIG_PLC_NAME WC_STR_PLC_NAME_PLC308
++#define WC_CONFIG_MODEM_PORT "/dev/ttyS2"
++#define WC_CONFIG_MODEM_HW_FLOW
++#define WC_CONFIG_MENU_PLC
++#define WC_CONFIG_MENU_NET_GPRS
++#define WC_CONFIG_MENU_NET_VPN
++#define WC_CONFIG_MENU_NET_DDNS
++#define WC_CONFIG_MENU_UTILS_PING
++
++/* --- PLC304 (ru,1251) ---*/
++#elif defined(OWEN_PLC304_DEBET_E)
++#include "wc_strings_ru.h"
++#define WC_CONFIG_PLC_NAME WC_STR_PLC_NAME_PLC304
++#define WC_CONFIG_MODEM_PORT "/dev/ttyS2"
++#define WC_CONFIG_MODEM_HW_FLOW
++#define WC_CONFIG_MENU_PLC
++#define WC_CONFIG_MENU_NET_GPRS
++#define WC_CONFIG_MENU_NET_VPN
++#define WC_CONFIG_MENU_NET_DDNS
++#define WC_CONFIG_MENU_NET_WD
++#define WC_CONFIG_MENU_NET_IDS
++#define WC_CONFIG_MENU_UTILS_PING
++
+ /* PLC323xxx */
+ #elif defined(OWEN_PLC323)
+ #include "wc_strings_ru.h"
+@@ -49,26 +75,32 @@
+ #define WC_CONFIG_NO_AUTO_GPRS
+ #define WC_CONFIG_MENU_NET_VPN
+ #define WC_CONFIG_MENU_NET_DDNS
++#define WC_CONFIG_MENU_NET_ROUTER
+ #define WC_CONFIG_MENU_UTILS_PING
+ 
+ /* --- default ---*/
+ #else
+-#include "wc_strings_en.h"
++#include "wc_strings_ru.h"
+ #define WC_CONFIG_PLC_NAME "OWEN PLC"
+ #define WC_CONFIG_RC_SYNC
+ #define WC_CONFIG_MODEM_PORT "/dev/ttyS1"
+ //#define WC_CONFIG_MENU_PLC
+ //#define WC_CONFIG_MENU_NET_GPRS
+ //#define WC_CONFIG_MENU_NET_VPN
+-//#define WC_CONFIG_MENU_NET_DDNS
++#define WC_CONFIG_MENU_NET_DDNS
+ #define WC_CONFIG_MENU_UTILS_PING
++#define WC_CONFIG_MENU_NET_WD
++#define WC_CONFIG_MENU_NET_IDS
+ #endif
+ 
+ /* common calculated definitions */
+ 
+ #if defined(WC_CONFIG_MENU_NET_GPRS) || \
+ 	defined(WC_CONFIG_MENU_NET_VPN) || \
+-	defined(WC_CONFIG_MENU_NET_DDNS)
++	defined(WC_CONFIG_MENU_NET_DDNS) || \
++        defined(WC_CONFIG_MENU_NET_WD) || \
++        defined(WC_CONFIG_MENU_NET_IDS) || \
++	defined(WC_CONFIG_MENU_NET_ROUTER)
+ #define WC_CONFIG_MENU_NET_SUBMENU
+ #endif
+ #if defined(WC_CONFIG_MENU_NET_GPRS) || defined(WC_CONFIG_MENU_NET_VPN)
+Index: wc/cgic.c
+===================================================================
+--- webconfig.old/wc/cgic.c	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/wc/cgic.c	(.../trunk)	(revision 2345)
+@@ -12,7 +12,7 @@
+ #define CGICDEBUGSTART \
+ 	{ \
+ 		FILE *dout; \
+-		dout = fopen("/home/boutell/public_html/debug", "a"); \
++		dout = fopen("/tmp/wc.log", "a"); \
+ 	
+ #define CGICDEBUGEND \
+ 		fclose(dout); \
+@@ -263,6 +263,23 @@
+ 			fprintf(dout, "PostMultipartInput succeeded\n");
+ 			CGICDEBUGEND	
+ #endif /* CGICDEBUG */
++		} else {
++			cgiContentLength = strlen(cgiQueryString);
++			if (cgiParseGetFormInput() != cgiParseSuccess) {
++#ifdef CGICDEBUG
++				CGICDEBUGSTART
++				fprintf(dout, "GetFormInput failed\n");
++				CGICDEBUGEND	
++#endif /* CGICDEBUG */
++				cgiFreeResources();
++				return -1;
++			} else {	
++#ifdef CGICDEBUG
++				CGICDEBUGSTART
++				fprintf(dout, "GetFormInput succeeded\n");
++				CGICDEBUGEND	
++#endif /* CGICDEBUG */
++			}
+ 		}
+ 	} else if (cgiStrEqNc(cgiRequestMethod, "get")) {	
+ 		/* The spec says this should be taken care of by
+@@ -284,6 +301,11 @@
+ #endif /* CGICDEBUG */
+ 		}
+ 	}
++#ifdef CGICDEBUG
++	CGICDEBUGSTART
++	fprintf(dout, "running cgiMain\n");
++	CGICDEBUGEND	
++#endif /* CGICDEBUG */
+ 	result = cgiMain();
+ 	cgiFreeResources();
+ 	return result;
+@@ -1194,11 +1216,11 @@
+ static cgiFormResultType cgiFormEntryString(
+ 	cgiFormEntry *e, char *result, int max, int newlines);
+ 
+-static cgiFormEntry *cgiFormEntryFindFirst(char *name);
++static cgiFormEntry *cgiFormEntryFindFirst(const char *name);
+ static cgiFormEntry *cgiFormEntryFindNext();
+ 
+ cgiFormResultType cgiFormString(
+-        char *name, char *result, int max) {
++        const char *name, char *result, int max) {
+ 	cgiFormEntry *e;
+ 	e = cgiFormEntryFindFirst(name);
+ 	if (!e) {
+@@ -2301,10 +2323,10 @@
+ 	}
+ }
+ 
+-static char *cgiFindTarget = 0;
++static const char *cgiFindTarget = 0;
+ static cgiFormEntry *cgiFindPos = 0;
+ 
+-static cgiFormEntry *cgiFormEntryFindFirst(char *name) {
++static cgiFormEntry *cgiFormEntryFindFirst(const char *name) {
+ 	cgiFindTarget = name;
+ 	cgiFindPos = cgiFormEntryFirst;
+ 	return cgiFormEntryFindNext();
+Index: wc/jsmn.c
+===================================================================
+--- webconfig.old/wc/jsmn.c	(.../tags/20130930-owen-1.6)	(revision 0)
++++ webconfig.new/wc/jsmn.c	(.../trunk)	(revision 2345)
+@@ -0,0 +1,311 @@
++#include <stdlib.h>
++
++#include "jsmn.h"
++
++/**
++ * Allocates a fresh unused token from the token pull.
++ */
++static jsmntok_t *jsmn_alloc_token(jsmn_parser *parser,
++		jsmntok_t *tokens, size_t num_tokens) {
++	jsmntok_t *tok;
++	if (parser->toknext >= num_tokens) {
++		return NULL;
++	}
++	tok = &tokens[parser->toknext++];
++	tok->start = tok->end = -1;
++	tok->size = 0;
++#ifdef JSMN_PARENT_LINKS
++	tok->parent = -1;
++#endif
++	return tok;
++}
++
++/**
++ * Fills token type and boundaries.
++ */
++static void jsmn_fill_token(jsmntok_t *token, jsmntype_t type,
++                            int start, int end) {
++	token->type = type;
++	token->start = start;
++	token->end = end;
++	token->size = 0;
++}
++
++/**
++ * Fills next available token with JSON primitive.
++ */
++static jsmnerr_t jsmn_parse_primitive(jsmn_parser *parser, const char *js,
++		size_t len, jsmntok_t *tokens, size_t num_tokens) {
++	jsmntok_t *token;
++	int start;
++
++	start = parser->pos;
++
++	for (; parser->pos < len && js[parser->pos] != '\0'; parser->pos++) {
++		switch (js[parser->pos]) {
++#ifndef JSMN_STRICT
++			/* In strict mode primitive must be followed by "," or "}" or "]" */
++			case ':':
++#endif
++			case '\t' : case '\r' : case '\n' : case ' ' :
++			case ','  : case ']'  : case '}' :
++				goto found;
++		}
++		if (js[parser->pos] < 32 || js[parser->pos] >= 127) {
++			parser->pos = start;
++			return JSMN_ERROR_INVAL;
++		}
++	}
++#ifdef JSMN_STRICT
++	/* In strict mode primitive must be followed by a comma/object/array */
++	parser->pos = start;
++	return JSMN_ERROR_PART;
++#endif
++
++found:
++	if (tokens == NULL) {
++		parser->pos--;
++		return 0;
++	}
++	token = jsmn_alloc_token(parser, tokens, num_tokens);
++	if (token == NULL) {
++		parser->pos = start;
++		return JSMN_ERROR_NOMEM;
++	}
++	jsmn_fill_token(token, JSMN_PRIMITIVE, start, parser->pos);
++#ifdef JSMN_PARENT_LINKS
++	token->parent = parser->toksuper;
++#endif
++	parser->pos--;
++	return 0;
++}
++
++/**
++ * Filsl next token with JSON string.
++ */
++static jsmnerr_t jsmn_parse_string(jsmn_parser *parser, const char *js,
++		size_t len, jsmntok_t *tokens, size_t num_tokens) {
++	jsmntok_t *token;
++
++	int start = parser->pos;
++
++	parser->pos++;
++
++	/* Skip starting quote */
++	for (; parser->pos < len && js[parser->pos] != '\0'; parser->pos++) {
++		char c = js[parser->pos];
++
++		/* Quote: end of string */
++		if (c == '\"') {
++			if (tokens == NULL) {
++				return 0;
++			}
++			token = jsmn_alloc_token(parser, tokens, num_tokens);
++			if (token == NULL) {
++				parser->pos = start;
++				return JSMN_ERROR_NOMEM;
++			}
++			jsmn_fill_token(token, JSMN_STRING, start+1, parser->pos);
++#ifdef JSMN_PARENT_LINKS
++			token->parent = parser->toksuper;
++#endif
++			return 0;
++		}
++
++		/* Backslash: Quoted symbol expected */
++		if (c == '\\' && parser->pos + 1 < len) {
++			int i;
++			parser->pos++;
++			switch (js[parser->pos]) {
++				/* Allowed escaped symbols */
++				case '\"': case '/' : case '\\' : case 'b' :
++				case 'f' : case 'r' : case 'n'  : case 't' :
++					break;
++				/* Allows escaped symbol \uXXXX */
++				case 'u':
++					parser->pos++;
++					for(i = 0; i < 4 && parser->pos < len && js[parser->pos] != '\0'; i++) {
++						/* If it isn't a hex character we have an error */
++						if(!((js[parser->pos] >= 48 && js[parser->pos] <= 57) || /* 0-9 */
++									(js[parser->pos] >= 65 && js[parser->pos] <= 70) || /* A-F */
++									(js[parser->pos] >= 97 && js[parser->pos] <= 102))) { /* a-f */
++							parser->pos = start;
++							return JSMN_ERROR_INVAL;
++						}
++						parser->pos++;
++					}
++					parser->pos--;
++					break;
++				/* Unexpected symbol */
++				default:
++					parser->pos = start;
++					return JSMN_ERROR_INVAL;
++			}
++		}
++	}
++	parser->pos = start;
++	return JSMN_ERROR_PART;
++}
++
++/**
++ * Parse JSON string and fill tokens.
++ */
++jsmnerr_t jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
++		jsmntok_t *tokens, unsigned int num_tokens) {
++	jsmnerr_t r;
++	int i;
++	jsmntok_t *token;
++	int count = 0;
++
++	for (; parser->pos < len && js[parser->pos] != '\0'; parser->pos++) {
++		char c;
++		jsmntype_t type;
++
++		c = js[parser->pos];
++		switch (c) {
++			case '{': case '[':
++				count++;
++				if (tokens == NULL) {
++					break;
++				}
++				token = jsmn_alloc_token(parser, tokens, num_tokens);
++				if (token == NULL)
++					return JSMN_ERROR_NOMEM;
++				if (parser->toksuper != -1) {
++					tokens[parser->toksuper].size++;
++#ifdef JSMN_PARENT_LINKS
++					token->parent = parser->toksuper;
++#endif
++				}
++				token->type = (c == '{' ? JSMN_OBJECT : JSMN_ARRAY);
++				token->start = parser->pos;
++				parser->toksuper = parser->toknext - 1;
++				break;
++			case '}': case ']':
++				if (tokens == NULL)
++					break;
++				type = (c == '}' ? JSMN_OBJECT : JSMN_ARRAY);
++#ifdef JSMN_PARENT_LINKS
++				if (parser->toknext < 1) {
++					return JSMN_ERROR_INVAL;
++				}
++				token = &tokens[parser->toknext - 1];
++				for (;;) {
++					if (token->start != -1 && token->end == -1) {
++						if (token->type != type) {
++							return JSMN_ERROR_INVAL;
++						}
++						token->end = parser->pos + 1;
++						parser->toksuper = token->parent;
++						break;
++					}
++					if (token->parent == -1) {
++						break;
++					}
++					token = &tokens[token->parent];
++				}
++#else
++				for (i = parser->toknext - 1; i >= 0; i--) {
++					token = &tokens[i];
++					if (token->start != -1 && token->end == -1) {
++						if (token->type != type) {
++							return JSMN_ERROR_INVAL;
++						}
++						parser->toksuper = -1;
++						token->end = parser->pos + 1;
++						break;
++					}
++				}
++				/* Error if unmatched closing bracket */
++				if (i == -1) return JSMN_ERROR_INVAL;
++				for (; i >= 0; i--) {
++					token = &tokens[i];
++					if (token->start != -1 && token->end == -1) {
++						parser->toksuper = i;
++						break;
++					}
++				}
++#endif
++				break;
++			case '\"':
++				r = jsmn_parse_string(parser, js, len, tokens, num_tokens);
++				if (r < 0) return r;
++				count++;
++				if (parser->toksuper != -1 && tokens != NULL)
++					tokens[parser->toksuper].size++;
++				break;
++			case '\t' : case '\r' : case '\n' : case ' ':
++				break;
++			case ':':
++				parser->toksuper = parser->toknext - 1;
++				break;
++			case ',':
++				if (tokens != NULL &&
++						tokens[parser->toksuper].type != JSMN_ARRAY &&
++						tokens[parser->toksuper].type != JSMN_OBJECT) {
++#ifdef JSMN_PARENT_LINKS
++					parser->toksuper = tokens[parser->toksuper].parent;
++#else
++					for (i = parser->toknext - 1; i >= 0; i--) {
++						if (tokens[i].type == JSMN_ARRAY || tokens[i].type == JSMN_OBJECT) {
++							if (tokens[i].start != -1 && tokens[i].end == -1) {
++								parser->toksuper = i;
++								break;
++							}
++						}
++					}
++#endif
++				}
++				break;
++#ifdef JSMN_STRICT
++			/* In strict mode primitives are: numbers and booleans */
++			case '-': case '0': case '1' : case '2': case '3' : case '4':
++			case '5': case '6': case '7' : case '8': case '9':
++			case 't': case 'f': case 'n' :
++				/* And they must not be keys of the object */
++				if (tokens != NULL) {
++					jsmntok_t *t = &tokens[parser->toksuper];
++					if (t->type == JSMN_OBJECT ||
++							(t->type == JSMN_STRING && t->size != 0)) {
++						return JSMN_ERROR_INVAL;
++					}
++				}
++#else
++			/* In non-strict mode every unquoted value is a primitive */
++			default:
++#endif
++				r = jsmn_parse_primitive(parser, js, len, tokens, num_tokens);
++				if (r < 0) return r;
++				count++;
++				if (parser->toksuper != -1 && tokens != NULL)
++					tokens[parser->toksuper].size++;
++				break;
++
++#ifdef JSMN_STRICT
++			/* Unexpected char in strict mode */
++			default:
++				return JSMN_ERROR_INVAL;
++#endif
++		}
++	}
++
++	for (i = parser->toknext - 1; i >= 0; i--) {
++		/* Unmatched opened object or array */
++		if (tokens[i].start != -1 && tokens[i].end == -1) {
++			return JSMN_ERROR_PART;
++		}
++	}
++
++	return count;
++}
++
++/**
++ * Creates a new parser based over a given  buffer with an array of tokens
++ * available.
++ */
++void jsmn_init(jsmn_parser *parser) {
++	parser->pos = 0;
++	parser->toknext = 0;
++	parser->toksuper = -1;
++}
++
+Index: wc/cgic.h
+===================================================================
+--- webconfig.old/wc/cgic.h	(.../tags/20130930-owen-1.6)	(revision 2345)
++++ webconfig.new/wc/cgic.h	(.../trunk)	(revision 2345)
+@@ -91,7 +91,7 @@
+ 	cgic.html for documentation. */
+ 
+ extern cgiFormResultType cgiFormString(
+-	char *name, char *result, int max);
++	const char *name, char *result, int max);
+ 
+ extern cgiFormResultType cgiFormStringNoNewlines(
+ 	char *name, char *result, int max);
+Index: wc/jsmn.h
+===================================================================
+--- webconfig.old/wc/jsmn.h	(.../tags/20130930-owen-1.6)	(revision 0)
++++ webconfig.new/wc/jsmn.h	(.../trunk)	(revision 2345)
+@@ -0,0 +1,77 @@
++#ifndef __JSMN_H_
++#define __JSMN_H_
++
++#include <stddef.h>
++
++#define JSMN_PARENT_LINKS
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/**
++ * JSON type identifier. Basic types are:
++ * 	o Object
++ * 	o Array
++ * 	o String
++ * 	o Other primitive: number, boolean (true/false) or null
++ */
++typedef enum {
++	JSMN_PRIMITIVE = 0,
++	JSMN_OBJECT = 1,
++	JSMN_ARRAY = 2,
++	JSMN_STRING = 3
++} jsmntype_t;
++
++typedef enum {
++	/* Not enough tokens were provided */
++	JSMN_ERROR_NOMEM = -1,
++	/* Invalid character inside JSON string */
++	JSMN_ERROR_INVAL = -2,
++	/* The string is not a full JSON packet, more bytes expected */
++	JSMN_ERROR_PART = -3
++} jsmnerr_t;
++
++/**
++ * JSON token description.
++ * @param		type	type (object, array, string etc.)
++ * @param		start	start position in JSON data string
++ * @param		end		end position in JSON data string
++ */
++typedef struct {
++	jsmntype_t type;
++	int start;
++	int end;
++	int size;
++#ifdef JSMN_PARENT_LINKS
++	int parent;
++#endif
++} jsmntok_t;
++
++/**
++ * JSON parser. Contains an array of token blocks available. Also stores
++ * the string being parsed now and current position in that string
++ */
++typedef struct {
++	unsigned int pos; /* offset in the JSON string */
++	unsigned int toknext; /* next token to allocate */
++	int toksuper; /* superior token node, e.g parent object or array */
++} jsmn_parser;
++
++/**
++ * Create JSON parser over an array of tokens
++ */
++void jsmn_init(jsmn_parser *parser);
++
++/**
++ * Run JSON parser. It parses a JSON data string into and array of tokens, each describing
++ * a single JSON object.
++ */
++jsmnerr_t jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
++		jsmntok_t *tokens, unsigned int num_tokens);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* __JSMN_H_ */

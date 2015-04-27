@@ -1,0 +1,24 @@
+--- a/Makefile	2012-07-25 18:26:01.000000000 +0300
++++ b/Makefile	2012-07-25 20:32:39.000000000 +0300
+@@ -12,10 +12,12 @@
+ 
+ #LDFLAGS=-static
+ SRCDIR=.
++VPATH=$(SRCDIR)
+ #LINUXDIR=/home/parashut/kernel/owen-at91-my/linux-2.6.30-at91
+ CFLAGS=-Wall -I$(SRCDIR)
+ #CFLAGS+=-I$(LINUXDIR)/include
+ CFLAGS+=-DDEBUG
++INCLUDES=-I.
+ 
+ TARGET=echo_csd
+ 
+@@ -23,7 +25,7 @@
+     $(SRCDIR)/term_utils.c
+ 
+ $(TARGET): $(SRC) version.h
+-	$(CC) -o $@ $(SRC) $(CFLAGS) $(LDFLAGS)
++	$(CC) -o $@ $(SRC) $(INCLUDES) $(CFLAGS) $(LDFLAGS)
+ 
+ version.h: $(SRC)
+ 	@$(SRCDIR)/version.sh $(APP_NAME) $(VERSION)

@@ -1,0 +1,37 @@
+#!/bin/sh
+
+if [ "$SUBSYSTEM" = "usb" -a "$ACTION" = "add" ]; then
+	read class </sys/$DEVPATH/bInterfaceClass
+	read number </sys/$DEVPATH/bInterfaceNumber
+	IFS=/
+	set $PRODUCT
+	IFS=
+	vendor=$1
+	product=$2
+	conf="/usr/share/usb_modeswitch/$vendor:$product"
+	if [ "$class" = "ff" -a "$number" = "00" ]; then
+		id_attr="/sys/bus/usb-serial/drivers/option1/new_id"
+		if [ ! -e "$id_attr" ]; then
+			modprobe option 2>/dev/null || true
+		fi
+		if [ -e "$id_attr" ]; then
+			echo "$vendor $product ff" > $id_attr
+		else
+			modprobe -r usbserial 2>/dev/null
+			modprobe usbserial "vendor=0x$vendor" "product=0x$product" 2>/dev/null
+		fi
+	elif [ -f "$conf" ]; then
+		 if [ "$vendor" = "12d1" ]; then
+			if [ "$class" = "08" -a "$number" = "00" ]; then
+				usb_modeswitch -v $vendor -p $product -c "$conf"
+			fi
+		else
+			usb_modeswitch -v $vendor -p $product -c "$conf"
+		fi
+	fi
+elif [ "$SUBSYSTEM" = "tty" -a "$ACTION" = "add" ]; then
+	if [ "$(/usr/sbin/usbtty $DEVPATH)" = "$DEVNAME" ]; then
+		. /etc/network.conf
+		/usr/sbin/gprs "${USB_GPRS_PROFILE}" "$PWD/$DEVNAME"
+	fi
+fi

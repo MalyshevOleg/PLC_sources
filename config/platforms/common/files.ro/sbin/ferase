@@ -1,0 +1,38 @@
+#!/bin/sh
+if [ $# -lt 1 ]; then
+  echo "usage: ferase [-y] device"
+  exit 0 
+fi
+NO_PROMPT=0
+if [ $# -eq 2 ]; then
+  if [ "$1" == "-y" ]; then
+    NO_PROMPT=1
+  fi
+  DEVICE=$2
+else
+DEVICE=$1
+fi
+MTD=`echo ${DEVICE} | sed -r "s/\/dev\/(mtd[0-9])/\1/"`
+if [ "`echo ${MTD} | sed 's/[0-9]$//'`" != "mtd" ]; then
+  echo "invalid device ${DEVICE}"
+  exit 1
+fi
+MTD_DESCR=`grep ${MTD} /proc/mtd 2>/dev/null`
+if [ "${MTD_DESCR}" == "" ]; then
+  echo "no such device ${DEVICE}"
+  exit 1
+fi
+if [ ${NO_PROMPT} -eq 0 ]; then
+  echo -n "Are you sure want to erase ${DEVICE}? "
+  read ANSWER
+  if [ "${ANSWER}" != "Y" -a "${ANSWER}" != "y" ]; then
+    exit 0
+  fi
+fi
+echo "erasing ${DEVICE}"
+MTD_SIZE=`echo ${MTD_DESCR} | awk '{ print "0x"$2 }'`
+MTD_SIZE=`printf "%d" ${MTD_SIZE}`
+ERASE_SIZE=`echo ${MTD_DESCR} | grep ${MTD} | awk '{ print "0x"$3 }'`
+ERASE_SIZE=`printf "%d" ${ERASE_SIZE}`
+NUM_BLOCKS=`expr ${MTD_SIZE} / ${ERASE_SIZE}`
+/sbin/flash_erase ${DEVICE} 0 ${NUM_BLOCKS}

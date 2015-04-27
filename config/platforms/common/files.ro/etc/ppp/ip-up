@@ -1,0 +1,184 @@
+#!/bin/sh
+
+. /etc/network/common.sh
+
+echo "$0: args: $*" >> $file_log
+
+save_and_remove_gateways()
+{
+	# save current default routers sorted by metric as: gw metric interface
+	route -n|grep UG|sort -n -k5,6 |awk '{print $2 " " $5 " " $8;}' > $file_ppp_save_gw
+	
+	while read line; do
+		set $line > /dev/null
+		route del default gw $1 dev $3
+	done < $file_ppp_save_gw
+}
+
+restore_gateways()
+{
+	if [ -f $file_ppp_save_gw ]; then
+		while read line; do
+			set $line > /dev/null
+			route add default gw $1 metric $2 dev $3
+		done < $file_ppp_save_gw
+
+		rm $file_ppp_save_gw
+	fi
+}
+
+set_default_gateway()
+{
+	route -n |grep -q -E "UG.*$1"
+	if [ $? -ne 0 ]; then
+		route add default dev $1
+	fi
+}
+
+save_and_update_dns()
+{
+	# update resolver config as got
+	if [ "$USEPEERDNS" == "1" ]; then
+		if [ "$DNS1" != "" -o "$DNS2" != "" ]; then
+			# save before update
+			cp $file_resolv_conf $file_ppp_save_dns
+			
+			echo "# PPP-up DNS configuration:" > $file_resolv_conf
+			[ "$DNS1" != "" ] && echo "nameserver $DNS1" >> $file_resolv_conf
+			[ "$DNS2" != "" ] && echo "nameserver $DNS2" >> $file_resolv_conf
+		fi
+	fi
+}
+
+# restore resolver conf
+restore_dns()
+{
+	if [ -f $file_ppp_save_dns ]; then
+		cat $file_ppp_save_dns > $file_resolv_conf
+		sync
+		rm $file_ppp_save_dns
+	fi
+}
+
+# up main ppp link (to internet)
+ppp_inet_link_up()
+{
+	network_lock
+	touch $file_ppp_flag
+	save_and_remove_gateways
+	save_and_update_dns
+	set_default_gateway $1
+	firewall inet-up $1
+	network_unlock
+}
+
+# down main ppp link (to internet)
+ppp_inet_link_down()
+{
+	network_lock
+	firewall inet-down $1
+	restore_dns
+	restore_gateways
+	rm -f $file_ppp_flag
+	network_unlock
+}
+
+ppp_vpn_link_up()
+{
+	echo "$0: ppp_vpn_link_up: args: 1='$1', 3='$3', 4='$4'" >> $file_log
+	route add -net $3 netmask $4 dev $1
+}
+
+# creates files:
+# - $dir_runtime/$name.if containing: pppN
+# - $dir_runtime/$iface.cn containing: name of the connection (e.g. mts.gprs)
+# so reading /var/run/pppN.pid we can get the pid of the connection
+# gets name of the interface from ip-up
+ppp_identify()
+{
+	iface=$1
+	pidfile="/var/run/${iface}.pid"
+
+	network_lock
+	
+	while [ 1 ]; do
+		if [ ! -f $pidfile ]; then
+			echo "$0: ppp_identify: failed to find pidfile for IF: '${iface}'" >> $file_log
+			break
+		fi
+
+		pid=`cat $pidfile`
+		echo "$0: ppp_identify: if=${iface}, pid=$pid" >> $file_log
+		pid=$((pid+0))
+
+		if [ $pid -eq 0 ]; then
+			echo "$0: ppp_identify: pid for IF '${iface}' is wrong" >> $file_log
+			break
+		fi
+
+		cname=`ps |grep "$pid.*pppd" | grep -v grep | \
+			sed -e 's/.*pppd call[[:space:]]//' | cut -f1 -d " "`
+
+		if [ "$cname" == "" ]; then
+			echo "$0: ppp_identify: failed to determine connection name for IF '${iface}'" >> $file_log
+			break
+		fi
+
+		# all ok - create IDs
+		echo $iface > $dir_runtime/${cname}.if
+		echo $cname > $dir_runtime/${iface}.cn
+		
+		break
+	done
+
+	network_unlock
+}
+
+ppp_unidentify()
+{
+	iface=$1
+
+	network_lock
+
+	if [ -f $dir_runtime/${iface}.cn ]; then
+		cname=`cat $dir_runtime/${iface}.cn`
+		rm -f $dir_runtime/${iface}.cn
+		echo "$0: ppp_unidentify: IF='$iface', removed ID: $dir_runtime/${iface}.cn" >> $file_log
+		
+		if [ "$cname" != "" -a -f $dir_runtime/${cname}.if ]; then
+			#rm -f $dir_runtime/${cname}.if
+			# remove .if and any optional flags related to the connection name 
+			# (e.g. .starting set by web-configurator)
+			rm -f $dir_runtime/${cname}.*
+			#echo "$0: ppp_unidentify: IF='$iface', removed ID: $dir_runtime/${cname}.if" >> $file_log
+			echo "$0: ppp_unidentify: IF='$iface', removed ID and any flags: $dir_runtime/${cname}.*" >> $file_log
+		fi
+	fi
+	
+	network_unlock
+}
+
+echo "$0: arg[6]='$6'" >> $file_log
+
+name=`basename $0`
+case "$name" in
+	ip-up)
+		if ! `echo "$6" | grep "^VPN[[:space:]]" > /dev/null`; then
+			ppp_inet_link_up $1
+		else
+			ppp_vpn_link_up $1 $6
+		fi
+
+		ppp_identify $1
+		;;
+
+	ip-down)
+		if ! `echo "$6" | grep "^VPN[[:space:]]" > /dev/null`; then
+			ppp_inet_link_down $1
+		fi
+
+		ppp_unidentify $1
+		;;
+esac
+
+exit 0

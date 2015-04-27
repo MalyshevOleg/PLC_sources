@@ -1,0 +1,13 @@
+diff -uNr linux-3.0-old/arch/arm/mach-omap2/omap_l3_smx.c linux-3.0-new/arch/arm/mach-omap2/omap_l3_smx.c
+--- linux-3.0-old/arch/arm/mach-omap2/omap_l3_smx.c	2014-05-26 15:12:17.239314117 +0400
++++ linux-3.0-new/arch/arm/mach-omap2/omap_l3_smx.c	2014-05-26 15:13:37.217651634 +0400
+@@ -184,6 +184,9 @@
+ 		 * of such errors and handle the others. timeout error
+ 		 * is severe and not expected to occur.
+ 		 */
++		if ((status & L3_STATUS_0_TIMEOUT_MASK) != 0) {
++			printk("omap3_l3_app_irq: app_error: status=%x\n", status);
++		}
+ 		BUG_ON(status & L3_STATUS_0_TIMEOUT_MASK);
+ 	} else {
+ 		status = omap3_l3_readll(l3->rt, L3_SI_FLAG_STATUS_1);

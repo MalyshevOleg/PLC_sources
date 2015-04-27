@@ -1,0 +1,12 @@
+--- a/alsamixer/Makefile.in	2011-01-31 16:26:46.000000000 +0200
++++ b/alsamixer/Makefile.in	2011-02-17 16:27:42.000000000 +0200
+@@ -61,7 +61,8 @@
+ alsamixer_OBJECTS = $(am_alsamixer_OBJECTS)
+ alsamixer_LDADD = $(LDADD)
+ alsamixer_DEPENDENCIES =
+-DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)/include
++DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_srcdir)/include \
++	-I$(top_builddir)/include
+ depcomp = $(SHELL) $(top_srcdir)/depcomp
+ am__depfiles_maybe = depfiles
+ am__mv = mv -f

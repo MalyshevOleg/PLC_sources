@@ -1,0 +1,93 @@
+#!/bin/bash
+#
+# testing for exist of dir of USB scsi devices
+#
+
+# 
+data_signal_end_dev=/sys/class/gpio/gpio55/value
+
+# 
+prog_target=/mnt/ufs/root/CoDeSysSP
+
+# 
+#     =====================
+def_app_name=Application
+
+
+echo "start script"
+sleep 3
+
+for file in /mnt/ufs/media/sd*
+do
+	#echo $file
+	value=`echo $file| sed 's@/mnt/ufs/media/@@g'| xargs -0 echo "/dev/"| sed 's@ @@g'`
+	echo $value
+	if [ -b $value ] 
+	then
+		echo "yes dir = disk " $file
+		if [ -d $file/CDS_UPDATE_PRG ]
+		then
+			echo "dirs_exists"
+			# 
+			prog_source=$file/CDS_UPDATE_PRG
+			echo $prog_source
+			# 
+			prog_src_device=$value
+			echo $prog_src_device
+			# 
+			mac=`ifconfig eth0 |grep HWaddr |awk '{print $5 }'|sed "s/\://g`
+			log_file=$prog_source/$mac.txt
+			# 
+			touch $log_file
+			
+			# 
+			echo "Remove old app"
+			rm $prog_target/*.app && echo "del app ok" > $log_file
+			rm $prog_target/*.crc && echo "del crc ok" >> $log_file
+			sleep 1
+			# 
+			if [ -d $prog_source/visu ] ;
+			then
+				# 
+				echo "Remove old visu"
+				rm -rf $prog_target/visu && echo "del visu ok" >> $log_file
+				sleep 1
+				# 
+				cp -r $prog_source/visu  $prog_target/ && echo "copy visu ok" >> $log_file
+			fi
+			
+			echo "Copy new app"
+			#
+			sleep 1
+			cp $prog_source/$def_app_name.app  $prog_target  && echo "copy app ok" >> $log_file
+			cp $prog_source/$def_app_name.crc  $prog_target  && echo "copy crc ok" >> $log_file
+			
+			echo "Remove old autorun"
+			#
+			sleep 1
+			sed 's/^Application\(.*\)//g' $prog_target/CoDeSysSP.cfg >$prog_target/newCfg.cfg
+			rm $prog_target/CoDeSysSP.cfg  && echo "remove old autorun ok" >> $log_file
+
+			#
+			sleep 1
+			echo "Add autorun"
+			exec="sed \"s/^\[CmpApp\]/[CmpApp]\nApplication.1="$def_app_name"/g\"  "$prog_target"/newCfg.cfg >"$prog_target"/CoDeSysSP.cfg"
+			eval $exec && echo "add autorun ok" >> $log_file
+			sleep 3
+			
+			# 
+			if [ -f $data_signal_end_dev ] ;
+				then
+				echo "1" > $data_signal_end_dev
+				sleep 2
+				echo "0" > $data_signal_end_dev
+			fi
+		else
+			echo "update dirs not exists"
+		fi
+	else
+		echo "no dir = disk " $file
+		#echo "if need remove trash dirs remove # in next line"
+		#rm -rf $file
+	fi
+done

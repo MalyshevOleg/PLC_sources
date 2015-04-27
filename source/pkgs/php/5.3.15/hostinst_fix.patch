@@ -1,0 +1,11 @@
+--- a/scripts/Makefile.frag	2012-07-13 01:17:37.000000000 +0300
++++ b/scripts/Makefile.frag	2012-10-17 15:25:34.000000000 +0300
+@@ -26,7 +26,7 @@
+ 
+ install-build:
+ 	@echo "Installing build environment:     $(INSTALL_ROOT)$(phpbuilddir)/"
+-	@$(mkinstalldirs) $(INSTALL_ROOT)$(phpbuilddir) $(INSTALL_ROOT)$(bindir) && \
++	-@$(mkinstalldirs) $(INSTALL_ROOT)$(phpbuilddir) $(INSTALL_ROOT)$(bindir) && \
+ 	(cd $(top_srcdir) && \
+ 	$(INSTALL) $(BUILD_FILES_EXEC) $(INSTALL_ROOT)$(phpbuilddir) && \
+ 	$(INSTALL_DATA) $(BUILD_FILES) $(INSTALL_ROOT)$(phpbuilddir))

@@ -1,0 +1,34 @@
+
+# GPRS options template for web-configurator: common options for all profiles
+lock
+
+# persistent internet connection
+# re-try if connection lost
+persist
+
+# switch off all debug info
+kdebug 0
+				
+# we don't use ipx and compress algorithms on grps connection
+noipx
+nobsdcomp
+nodeflate
+
+noauth
+
+noipdefault
+usepeerdns
+defaultroute
+
+local
+ipcp-accept-local
+ipcp-accept-remote
+
+debug
+updetach
+
+# set MTU to 1500
+mtu 1500
+
+# end of common options
+

@@ -1,0 +1,130 @@
+Index: arch/arm/mach-versatile/versatile_owen_qemu.c
+===================================================================
+--- linux.old/arch/arm/mach-versatile/versatile_owen_qemu.c	(.../trunk)	(revision 0)
++++ linux.new/arch/arm/mach-versatile/versatile_owen_qemu.c	(.../branches/qemu)	(revision 905)
+@@ -0,0 +1,97 @@
++/*
++ *  linux/arch/arm/mach-versatile/versatile_ab.c
++ *
++ *  Copyright (C) 2004 ARM Limited
++ *  Copyright (C) 2000 Deep Blue Solutions Ltd
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++
++#include <linux/init.h>
++#include <linux/device.h>
++#include <linux/sysdev.h>
++#include <linux/amba/bus.h>
++#include <linux/io.h>
++
++#include <mach/hardware.h>
++#include <asm/irq.h>
++#include <asm/mach-types.h>
++
++#include <asm/mach/arch.h>
++
++
++#include <linux/amba/pl061.h>
++#include <linux/amba/mmci.h>
++
++#include "core.h"
++
++#define IRQ_MMCI1A	IRQ_VICSOURCE23
++
++#if defined (CONFIG_OWEN_RETAIN_MEMORY)
++#include <owen-common.h>
++#endif
++
++#if defined (CONFIG_OWEN_RETAIN_MEMORY)
++static struct owen_rm_info __initdata owen_rm;
++#endif
++
++static struct mmci_platform_data mmc1_plat_data = {
++	.ocr_mask	= MMC_VDD_32_33|MMC_VDD_33_34,
++	.status		= mmc_status,
++	.gpio_wp	= -1,
++	.gpio_cd	= -1,
++};
++
++#define MMCI1_IRQ	{ IRQ_MMCI1A, IRQ_SIC_MMCI1B }
++
++AMBA_DEVICE(mmc1,  "fpga:0b", MMCI1,    &mmc1_plat_data);
++
++static struct amba_device *amba_devs[] __initdata = {
++	&mmc1_device,
++};
++
++static void __init versatile_qemu_init(void)
++{
++        int i;
++	
++	versatile_init();
++
++	for (i = 0; i < ARRAY_SIZE(amba_devs); i++) {
++		struct amba_device *d = amba_devs[i];
++		amba_device_register(d, &iomem_resource);
++	}
++
++#if defined (CONFIG_OWEN_RETAIN_MEMORY)
++	owen_setup_rm_info_iface();
++#endif
++}
++
++static void __init versatile_qemu_init_early(void)
++{
++	versatile_init_early();
++#if defined (CONFIG_OWEN_RETAIN_MEMORY)
++  /* allocate retain memory shadow buffer */
++	owen_alloc_retain_memory(&owen_rm);
++#endif
++}
++
++MACHINE_START(VERSATILE_AB, "ARM-Versatile AB")
++	.boot_params	= 0x00000100,
++	.map_io		= versatile_map_io,
++	.init_early	= versatile_qemu_init_early,
++	.init_irq	= versatile_init_irq,
++	.timer		= &versatile_timer,
++	.init_machine	= versatile_qemu_init,
++MACHINE_END
+Index: arch/arm/mach-versatile/Kconfig
+===================================================================
+--- linux.old/arch/arm/mach-versatile/Kconfig	(.../trunk)	(revision 905)
++++ linux.new/arch/arm/mach-versatile/Kconfig	(.../branches/qemu)	(revision 905)
+@@ -17,4 +17,13 @@
+ 	  Include support for the ARM(R) Versatile Application Baseboard
+ 	  for the ARM926EJ-S.
+ 
++config MACH_OWEN_QEMU
++	bool "OWEN QEMU ARM emulator"
++	select CPU_ARM926T
++        select MACH_OWEN
++        select OWEN_RETAIN_MEMORY
++	select MIGHT_HAVE_PCI
++	help
++	  OWEN QEMU framework
++
+ endmenu
+Index: arch/arm/mach-versatile/Makefile
+===================================================================
+--- linux.old/arch/arm/mach-versatile/Makefile	(.../trunk)	(revision 905)
++++ linux.new/arch/arm/mach-versatile/Makefile	(.../branches/qemu)	(revision 905)
+@@ -5,4 +5,5 @@
+ obj-y					:= core.o
+ obj-$(CONFIG_ARCH_VERSATILE_PB)		+= versatile_pb.o
+ obj-$(CONFIG_MACH_VERSATILE_AB)		+= versatile_ab.o
++obj-$(CONFIG_MACH_OWEN_QEMU)		+= versatile_owen_qemu.o
+ obj-$(CONFIG_PCI)			+= pci.o

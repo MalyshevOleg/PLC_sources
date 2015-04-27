@@ -1,0 +1,13 @@
+--- glib2.15.4-1/glib/giounix.c	2008-01-28 17:03:22.000000000 +0200
++++ glib2.15.4-2/glib/giounix.c	2008-03-13 16:33:29.000000000 +0200
+@@ -46,6 +46,10 @@
+ #include "glib.h"
+ #include "galias.h"
+ 
++#ifndef	SSIZE_MAX
++# define SSIZE_MAX	LONG_MAX
++#endif
++
+ /*
+  * Unix IO Channels
+  */

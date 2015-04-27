@@ -1,0 +1,132 @@
+#!/bin/sh
+
+. /etc/profile
+
+BOOT_MODE=`/usr/bin/bootmode`
+
+# Fix transparency fo Qt & OpenGL
+fbset -rgba 8/16,8/8,8/0,8/24
+
+# load eeeprom driver and enable write to the whole memory
+modprobe at25
+
+set +e
+
+
+
+center() {
+  printf "%*s%*s" $((7*$CONSOLE_WIDTH/2+${#1}/2)) "$1" $((7*$CONSOLE_WIDTH/2-${#1}/2))
+}
+
+# Check and restore codesys configs
+echo "rc.local: Checking configs..."
+
+if [ -s /mnt/ufs/root/CoDeSysSP/CoDeSysSP.cfg ] ; then
+    echo "rc.local: ${fn} is OK"
+else
+    cp /etc/CoDeSysSP/CoDeSysSP.cfg /mnt/ufs/root/CoDeSysSP/
+fi
+
+if [ -s /mnt/ufs/root/CoDeSysSP_wrk/CoDeSysSP.cfg ] ; then
+    echo "rc.local: ${fn} is OK"
+else
+    cp /etc/CoDeSysSP/CoDeSysSP.cfg /mnt/ufs/root/CoDeSysSP_wrk/
+fi
+
+
+
+#setup fb color depth
+[ "${FB_COLOR_DEPTH}" != "" ] && fbset -depth ${FB_COLOR_DEPTH}
+
+#touch screen calibration
+if [ "$BOOT_MODE" == "cts" ]; then
+  /usr/bin/ts_calibrate
+  . /etc/rc.sync 2
+  fbmode -t; clear >>/dev/tty0; fbmode -g
+fi
+
+#<<<----------------------------------------------
+
+
+
+export LD_LIBRARY_PATH=/mnt/ufs/root/CoDeSysSP
+
+
+# extract retain memory config from /proc/owen_rm_info
+RETAIN_SIZE=`cat /proc/owen_rm_info|grep -E 'size=.+, address='|cut -d "," -f1|cut -d "=" -f2`
+RETAIN_ADDR=`cat /proc/owen_rm_info|grep -E 'size=.+, address='|cut -d "," -f2|cut -d "=" -f2`
+
+update_rmsync_cfg=1
+if [ -s /root/retain/rmsync.cfg ]; then
+    # -a includes hostname which may be changed, -p works strange..
+    if [ "`head -n 1 /root/retain/rmsync.cfg`" = "#`uname -mrsv`" ]; then
+	update_rmsync_cfg=0
+	echo "/root/retain/rmsync.cfg: correct"
+    fi
+fi
+if [ "$update_rmsync_cfg" = "1" ]; then
+    # making new rmsync.cfg
+    echo "#`uname -mrsv`" > /root/retain/rmsync.cfg
+    cat /root/retain/rmsync.cfg.in >> /root/retain/rmsync.cfg
+    
+    # edit rmsync.cfg
+    sed -ir -e '\
+	s/RETAIN_SIZE=.*$/RETAIN_SIZE='$RETAIN_SIZE'/
+	s/RETAIN_ADDR=.*$/RETAIN_ADDR='$RETAIN_ADDR'/' \
+	/root/retain/rmsync.cfg
+    sync
+    echo "/root/retain/rmsync.cfg: created & updated"
+fi
+
+# check each CoDeSys config: if retain memory params are wrong - fix it.
+CODESYS_CONFIGS="/root/CoDeSysSP/CoDeSysSP.cfg /root/CoDeSysSP_wrk/CoDeSysSP.cfg"
+
+for fn in $CODESYS_CONFIGS; do
+    if [ -f $fn ]; then
+	echo -n "testing $fn: "
+	_size=`cat $fn | awk '/^Retain.SRAM.Size=/ { print substr($1, index($1, "=") + 1); }'`
+	_addr=`cat $fn | awk '/^Retain.SRAM.Address=/ { print substr($1, index($1, "=") + 1); }'`
+	if [ "${RETAIN_ADDR}" != "${_addr}" -o "${RETAIN_SIZE}" != "${_size}" ]; then
+	    # edit config
+	    sed -ir -e '\
+		s/Retain.SRAM.Size=.*$/Retain.SRAM.Size='$RETAIN_SIZE'/
+		s/Retain.SRAM.Address=.*$/Retain.SRAM.Address='$RETAIN_ADDR'/' \
+		$fn
+	    sync
+	    echo "updated"
+	else
+	    echo "correct"
+	fi
+    fi
+done
+echo 255 > /sys/devices/platform/pwm-backlight/backlight/pwm-backlight/brightness
+md5sum /sys/bus/spi/devices/spi3.0/eeprom >/dev/null
+
+
+if [ -f /mnt/ufs/root/setup_com ];
+then
+  chmod 755 /mnt/ufs/root/setup_com
+  /mnt/ufs/root/setup_com
+else
+  echo "/mnt/ufs/root/uartmode -485 /dev/ttyS2" >/mnt/ufs/root/setup_com
+  echo "/mnt/ufs/root/uartmode -485 /dev/ttyS3" >/mnt/ufs/root/setup_com
+  chmod 755 /mnt/ufs/root/setup_com
+  /mnt/ufs/root/setup_com
+fi
+
+# run CoDeSys
+if [ "$BOOT_MODE" == "conf" ]; then
+    cd /mnt/ufs/root/CoDeSysSP
+    nice -n 10 ./codesyssp -qws &
+else
+    # run retain memory synchronizer for CodeSys
+    nice -n 10 /root/retain/rmsync -v -v &
+    cd /mnt/ufs/root/CoDeSysSP_wrk
+    if [ "$BOOT_MODE" == "uprj" ]; then
+      . /etc/rc.usb_sd_cpy
+    fi
+    nice -n 10 ./codesyssp -qws &
+fi
+
+gwaddr=`route -n | grep 'UG[ \t]' | awk '{print $2}'`
+ping -c 3 $gwaddr

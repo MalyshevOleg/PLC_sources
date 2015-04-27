@@ -1,0 +1,10 @@
+--disable-librfb
+--disable-vdpau
+--disable-assrender
+--disable-cog
+--disable-neon
+--disable-rsvg
+--disable-schro
+--disable-sdl
+--disable-sdltest
+--disable-sndfile

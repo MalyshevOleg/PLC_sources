@@ -1,0 +1,24 @@
+--- a/Makefile	2011-01-17 16:51:28.000000000 +0200
++++ b/Makefile	2011-01-17 16:53:56.000000000 +0200
+@@ -14,6 +14,7 @@
+ CC= cc
+ CFLAGS=		-Wall -O2 -pipe
+ INSTALL=	install
++STRIP=		strip
+ 
+ SDIR=./
+ VPATH=$(SDIR)
+@@ -30,10 +31,11 @@
+ 
+ 
+ genpowerd:	genpowerd.c
+-		${CC} ${CFLAGS} genpowerd.c -o $@
++		${CC} ${CFLAGS} $^ -o $@
++		${STRIP} $@
+ 
+ clean:
+ 		rm -f *.o *.bak genpowerd
+ 
+ install:	genpowerd
+-		-test -x genpowerd && ${INSTALL} -m755 -o${OWNER} -g${GROUP} -s genpowerd ${BINDIR}
++		-test -x genpowerd && ${INSTALL} -m755 -o${OWNER} -g${GROUP} genpowerd ${BINDIR}

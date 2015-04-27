@@ -1,0 +1,90 @@
+diff -Nru a/doc/config/conf.d/fastcgi.conf b/doc/config/conf.d/fastcgi.conf
+--- a/doc/config/conf.d/fastcgi.conf	2010-07-11 20:01:32.000000000 +0300
++++ b/doc/config/conf.d/fastcgi.conf	2012-08-15 17:32:00.000000000 +0300
+@@ -19,6 +19,24 @@
+ ## processes. you always should need this high number for your very
+ ## busy sites. And if you have a lot of RAM. :)
+ ##
++fastcgi.server = ( ".php" =>
++  ((
++    "socket" => "/tmp/php.socket",
++    "bin-path" => "/usr/bin/php-cgi",
++    "bin-environment" => (
++      "PHP_FCGI_CHILDREN" => "4",
++      "PHP_FCGI_MAX_REQUESTS" => "1000",
++      "PHPRC" => "/etc/php.ini"
++    ),
++    "bin-copy-environment" => (
++      "PATH", "SHELL", "USER"
++    ),
++    "min-procs" => 1,
++    "max-procs" => 1,
++    "idle-timeout" => 20
++  ))
++)
++
+ #fastcgi.server = ( ".php" =>
+ #                   ( "php-local" =>
+ #                     (
+diff -Nru a/doc/config/lighttpd.conf b/doc/config/lighttpd.conf
+--- a/doc/config/lighttpd.conf	2011-12-18 14:57:25.000000000 +0200
++++ b/doc/config/lighttpd.conf	2012-08-15 17:32:32.000000000 +0300
+@@ -14,7 +14,7 @@
+ ## chroot example aswell.
+ ##
+ var.log_root    = "/var/log/lighttpd"
+-var.server_root = "/srv/www"
++var.server_root = "/root/www"
+ var.state_dir   = "/var/run"
+ var.home_dir    = "/var/lib/lighttpd"
+ var.conf_dir    = "/etc/lighttpd"
+@@ -101,8 +101,8 @@
+ ## Run as a different username/groupname.
+ ## This requires root permissions during startup. 
+ ##
+-server.username  = "lighttpd"
+-server.groupname = "lighttpd"
++server.username = "admin"
++server.groupname = "admin"
+ 
+ ## 
+ ## enable core files.
+@@ -112,7 +112,7 @@
+ ##
+ ## Document root
+ ##
+-server.document-root = server_root + "/htdocs"
++server.document-root = server_root
+ 
+ ##
+ ## The value for the "Server:" response field.
+@@ -188,7 +188,7 @@
+ ## linux-sendfile - is recommended for small files.
+ ## writev         - is recommended for sending many large files
+ ##
+-server.network-backend = "linux-sendfile"
++server.network-backend = "write"
+ 
+ ##
+ ## As lighttpd is a single-threaded server, its main resource limit is
+@@ -333,7 +333,7 @@
+ ##
+ ## .php, .pl, .fcgi are most often handled by mod_fastcgi or mod_cgi
+ ##
+-static-file.exclude-extensions = ( ".php", ".pl", ".fcgi", ".scgi" )
++static-file.exclude-extensions = ( ".php", ".pl", ".fcgi", ".scgi", ".cgi" )
+ 
+ ##
+ ## error-handler for status 404
+diff -Nru a/doc/config/modules.conf b/doc/config/modules.conf
+--- a/doc/config/modules.conf	2010-07-11 20:01:32.000000000 +0300
++++ b/doc/config/modules.conf	2012-07-12 04:07:52.000000000 +0300
+@@ -129,7 +129,7 @@
+ ##
+ ## FastCGI (mod_fastcgi)
+ ##
+-#include "conf.d/fastcgi.conf"
++include "conf.d/fastcgi.conf"
+ 
+ ##
+ ## plain old CGI (mod_cgi)

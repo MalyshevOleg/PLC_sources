@@ -1,0 +1,42 @@
+--- a/Makefile.in	2010-11-05 15:55:44.000000000 +0200
++++ b/Makefile.in	2011-04-14 18:13:43.000000000 +0300
+@@ -97,8 +97,8 @@
+ 	$(CPP) $(srcdir)/sedscript.in | egrep '^s[/#]' | sed 's/REMOVEME//g;s# */#/#g;s/ *#/#/g;s#/ *#/#g;s/# g/#g/;' > sedscript
+ 	echo 's/VERSIONINFO/$(VERSION)/g' >> sedscript
+ 	echo 's#DATADIR#$(datadir)#g' >> sedscript
+-	echo 's#LIBDIR#$(libdir)#g' >> sedscript
+-	echo 's#BINDIR#$(bindir)#g' >> sedscript
++	echo 's#LIBDIR#/lib#g' >> sedscript
++	echo 's#BINDIR#/bin#g' >> sedscript
+ 	echo 's#PERSISTENT_DIRECTORY#$(PERSISTENT_DIRECTORY)#g' >> sedscript
+ 	echo 's#SYSCONFDIR#@sysconfdir@#g' >> sedscript
+ 
+--- a/net-snmp-create-v3-user.in	2010-05-30 23:19:04.000000000 +0300
++++ b/net-snmp-create-v3-user.in	2011-04-13 17:58:01.000000000 +0300
+@@ -5,7 +5,7 @@
+ # this shell script is designed to add new SNMPv3 users
+ # to Net-SNMP config file.
+ 
+-prefix=@prefix@
++prefix=/
+ exec_prefix=@exec_prefix@
+ includedir=@includedir@
+ libdir=@libdir@
+@@ -17,7 +17,7 @@
+ NSC_AGENTLIBS="@AGENTLIBS@ @PERLLDOPTS_FOR_APPS@"
+ NSC_PREFIX=$prefix
+ NSC_EXEC_PREFIX=$exec_prefix
+-NSC_SRCDIR=@srcdir@
++NSC_SRCDIR=.
+ NSC_INCDIR=${NSC_PREFIX}/include
+ NSC_BASE_SUBAGENT_LIBS="-lnetsnmpagent -lnetsnmp"
+ NSC_BASE_AGENT_LIBS="-lnetsnmpagent -lnetsnmpmibs -lnetsnmp"
+@@ -158,7 +158,7 @@
+     touch $outfile
+ fi
+ echo $line >> $outfile
+-outfile="@datadir@/snmp/snmpd.conf"
++outfile="/etc/snmp/snmpd.conf"
+ line="$token $user"
+ echo "adding the following line to $outfile:"
+ echo "  " $line

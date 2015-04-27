@@ -1,0 +1,22 @@
+--- minicom-1/configure	2006-10-16 10:54:20.000000000 +0300
++++ minicom-2/configure	2012-01-17 20:43:05.000000000 +0200
+@@ -7055,7 +7055,7 @@
+ # Some GNU/Linux systems (e.g., SuSE 4.3, 1996) don't have curses, but
+ # rather ncurses.  So we check for it.
+ TERMLIBS=
+-for termlib in tinfo ncurses curses termcap terminfo termlib ; do
++for termlib in tinfo ncursesw curses termcap terminfo termlib ; do
+    as_ac_Lib=`$as_echo "ac_cv_lib_${termlib}''_tputs" | $as_tr_sh`
+ { $as_echo "$as_me:${as_lineno-$LINENO}: checking for tputs in -l${termlib}" >&5
+ $as_echo_n "checking for tputs in -l${termlib}... " >&6; }
+@@ -7102,8 +7102,8 @@
+ 
+ LIBS="$LIBS $TERMLIBS"
+ 
+-if test "x$termlib" = xncurses; then
+-    for ac_header in ncurses/termcap.h
++if test "x$termlib" = xncursesw; then
++    for ac_header in ncursesw/termcap.h
+ do :
+   ac_fn_c_check_header_mongrel "$LINENO" "ncurses/termcap.h" "ac_cv_header_ncurses_termcap_h" "$ac_includes_default"
+ if test "x$ac_cv_header_ncurses_termcap_h" = xyes; then :

@@ -1,0 +1,11 @@
+--- ./src/Makefile.in	1999-07-07 11:25:54.000000000 +0300
++++ ./src/Makefile.in	2008-10-16 20:35:44.000000000 +0300
+@@ -360,7 +360,7 @@
+ check: check-am
+ installcheck-am:
+ installcheck: installcheck-am
+-install-exec-am: install-binPROGRAMS install-libexecPROGRAMS
++install-exec-am: install-binPROGRAMS
+ install-exec: install-exec-am
+ 
+ install-data-am:

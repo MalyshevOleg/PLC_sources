@@ -1,0 +1,101 @@
+diff -uNr linux-3.0/drivers/gpio/iopage.c linux-3.0-at91/drivers/gpio/iopage.c
+--- linux-3.0/drivers/gpio/iopage.c	1970-01-01 03:00:00.000000000 +0300
++++ linux-3.0-at91/drivers/gpio/iopage.c	2013-06-02 12:31:44.856640233 +0400
+@@ -0,0 +1,86 @@
++/*
++ * iopage.c
++ *
++ *  Copyright (C) 2013 Softerra LLC
++ */
++
++#include <linux/module.h>
++#include <linux/kernel.h>
++#include <linux/mman.h>
++#include <linux/device.h>
++#include <linux/backing-dev.h>
++
++#define DEVNAME "iopage"
++
++static int major = 0;
++static struct class *iopage_class;
++
++static int mmap_mmtest(struct file *file, struct vm_area_struct *vma)
++{
++    size_t size = vma->vm_end - vma->vm_start;
++
++    if (size != PAGE_SIZE)
++    {
++        return -EINVAL;
++    }
++
++    vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
++
++    if (remap_pfn_range(vma,
++                        vma->vm_start,
++                        AT91_BASE_SYS >> PAGE_SHIFT,
++                        size,
++                        vma->vm_page_prot))
++    {
++        return -EAGAIN;
++    }
++
++    return 0;
++}
++
++static const struct file_operations iopage_fops = 
++{
++    .owner      = THIS_MODULE,
++    .mmap       = mmap_mmtest,
++};
++
++static int __init iopage_init(void)
++{
++    int err = 0;
++
++    major = register_chrdev(0, DEVNAME, &iopage_fops);
++    if (major < 0)
++    {
++        printk("Unable to register iopage device\n");
++        return -EIO;
++    }
++
++    iopage_class = class_create(THIS_MODULE, DEVNAME);
++    if (IS_ERR(iopage_class))
++    {
++        printk("Unable to register iopage class\n");
++        err = PTR_ERR(iopage_class);
++        goto class_failed; 
++    }
++
++    device_create(iopage_class, NULL, MKDEV(major, 0), NULL, DEVNAME);
++
++    return 0;
++
++class_failed:
++    unregister_chrdev(major, DEVNAME);
++
++    return err;
++}
++
++static void __exit iopage_exit(void)
++{
++    device_destroy(iopage_class, MKDEV(major, 0));
++    class_destroy(iopage_class);
++    unregister_chrdev(major, DEVNAME);
++}
++
++module_init(iopage_init);
++module_exit(iopage_exit);
++
++MODULE_LICENSE("GPL");
+diff -uNr linux-3.0/drivers/gpio/Makefile linux-3.0-at91/drivers/gpio/Makefile
+--- linux-3.0/drivers/gpio/Makefile	2011-07-22 06:17:23.000000000 +0400
++++ linux-3.0-at91/drivers/gpio/Makefile	2013-06-02 12:32:44.200638869 +0400
+@@ -4,6 +4,7 @@
+ 
+ obj-$(CONFIG_GPIOLIB)		+= gpiolib.o
+ 
++obj-$(CONFIG_ARCH_AT91)		+= iopage.o
+ obj-$(CONFIG_GPIO_ADP5520)	+= adp5520-gpio.o
+ obj-$(CONFIG_GPIO_ADP5588)	+= adp5588-gpio.o
+ obj-$(CONFIG_GPIO_BASIC_MMIO_CORE)	+= basic_mmio_gpio.o

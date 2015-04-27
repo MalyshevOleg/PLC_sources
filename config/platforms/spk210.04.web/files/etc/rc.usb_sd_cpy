@@ -1,0 +1,129 @@
+#!/bin/sh
+#
+# Скрипт для копирования из/в PLC данных и программ
+#
+#
+# 1) Копирование пользовательской программы для CoDeSys v3 с внешнего носителя («флешка»). 
+#     при загрузке контроллера если к нему подключена «флешку» с пользовательской программой в определенной папке, 
+#     нужно ее (программу) скопировать на плк и запустить ее. После этого носитель можно отключить от контроллера. 
+#     Новая программа должна запускаться дальше как «загрузочная».
+#
+#
+
+
+#          Ограничения
+
+#  1) Следует настроить под себя устройства 
+#  2) Задать имя приложения (по умолчанию Application)
+#  3) Запуск следует производить только с включенного в рабочий режим устройства 
+#  4) Текущий каталог(каталог запуска скрипта) доступен для записи
+
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#  Скрипт изменения программ - параметры
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+# Временный каталог - должен быть доступен по записи
+my_temp=/mnt/ufs/root
+
+# Если USB флешка одна - то sba1, если вторая (совместно с первой) то sdb1, для MicroSD mmcblk0p1
+#=======================================
+# ====Комментировать раскомментировать синхронно===
+#==============Ниже=================
+
+# Имя каталога откуда копировать программу 
+#
+prog_source=/mnt/ufs/media/sda1/app
+#prog_source=/mnt/ufs/media/sdb1
+#prog_source=/mnt/ufs/media/mmcblk0p1
+
+
+# Имя устройства откуда копировать программу
+prog_src_device=/dev/sda1
+#prog_src_device=/dev/sdb1
+#prog_src_device=/dev/mmcblk0p1
+
+#===============Выше====================
+# ====Комментировать раскомментировать синхронно===
+#=======================================
+
+# Использовать скрипт копирования программы 
+use_cpy_prg=1
+# Каталог  
+prog_target=/mnt/ufs/root/CoDeSysSP_wrk
+# Название приложения
+def_app_name=Application
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Скрипт копирования данных - параметры
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+# Имя каталога откуда копировать данные
+# 
+#data_source=/mnt/ufs/root/data
+
+# Имя устройства
+# куда копировать данные
+#data_dst_device=/dev/mmcblk0p1
+
+#
+# Имя каталога куда копировать данные
+#
+#data_source=/mnt/ufs/media/sda1
+#data_source=/mnt/ufs/media/sdb1
+#data_target=/mnt/ufs/media/mmcblk0p1/data
+
+# Отмонтировать после копирования
+#data_cpy_umount=1
+
+
+# Устройство сигнализирующее окончание скрипта
+data_signal_end_dev=/sys/class/gpio/gpio55/value
+
+sleep 5
+if [ -b $prog_src_device ] ;
+then
+       #Есть устройство
+    echo "source device founded"
+    if [ -f $prog_source/$def_app_name.app ]  && [ -f $prog_source/$def_app_name.crc ] 
+           then
+        echo "Application exists"
+
+
+                                    # Удаляем старую программу
+                                    echo "Remove old app"
+                                    if [ -f $prog_target/*.app ]; then
+ 				    rm $prog_target/*.app
+ 				    fi
+ 				    if [ -f $prog_target/*.crc ]; then
+				     rm $prog_target/*.crc
+				    fi
+
+                                    echo "Copy new app"
+		  		    # Копируем новую
+ 				    cp $prog_source/$def_app_name.app  $prog_target
+ 				    cp $prog_source/$def_app_name.crc  $prog_target
+
+                                   # Есть визуализация
+                                   if [ -d $prog_source/visu ] ;
+                                   then
+                                         # Копируем
+                                          echo "Copy new visu"
+                                          rm -rf $prog_target/visu
+                                          cp -r $prog_source/visu  $prog_target/
+                                   fi
+
+                                   echo "Remove old autorun"
+                                   # Удаление приложения автозапуска
+		                   sed 's/^Application\(.*\)//g' $prog_target/CoDeSysSP.cfg >$prog_target/newCfg.cfg
+                                   if [ -f $prog_target/CoDeSysSP.cfg ];
+                                   then
+                                   rm $prog_target/CoDeSysSP.cfg
+	                           fi
+                                   #Добавление приложения автозапуска
+                                   echo "Add autorun"
+                                   exec="sed \"s/^\[CmpApp\]/[CmpApp]\nApplication.1="$def_app_name"/g\"  "$prog_target"/newCfg.cfg >"$prog_target"/CoDeSysSP.cfg"
+                                   eval $exec
+                                   sync
+    fi
+fi

@@ -1,0 +1,2 @@
+stty -F /dev/ttyS2 -g|sed 's/500/8500/'|xargs stty -F /dev/ttyS2
+stty -F /dev/ttyS3 -g|sed 's/500/8500/'|xargs stty -F /dev/ttyS3

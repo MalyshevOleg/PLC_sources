@@ -1,0 +1,96 @@
+#!/bin/sh
+
+. /etc/network/common.sh
+. $file_network_conf
+
+tmp_peer=/tmp/auto.gprs
+tmp_chat=/tmp/auto.chat
+auto_peer="$dir_ppp_profiles/auto"
+
+preinit() {
+	if [ -n "$2" ]; then
+		PINCODE="$2" gcom -d "$device" -s /etc/gcom/setpin.gcom || exit 1
+	fi
+	# wait for network registration
+	gcom -d "$1" -s /etc/gcom/carrier.gcom || exit 1
+}
+
+update_auth() {
+	line="$2 $3 $4 * # added by gprs-auto-script"
+	grep "$line" /etc/ppp/$1 >/dev/null 2>&1 && return
+	(grep -v '# added by gprs-auto-script' /etc/ppp/$1; echo $line >>/tmp/$1.tmp ) >/tmp/$1.tmp
+	cat /tmp/$1.tmp >/etc/ppp/$1
+	rm /tmp/$1.tmp
+}
+
+profile="$1"
+device="$2"
+apn="${USB_GPRS_APN}"
+pincode="${USB_SIM_PIN}"
+user="${USB_GPRS_USER}"
+password="${USB_GPRS_PASS}"
+
+if [ "$profile" = "auto" ]; then
+	if [ -z "$device" ]; then
+		exit 1
+	fi
+	preinit "$device" "$pincode"
+	imsi=`gcom -d "$device" -s /etc/gcom/imsi.gcom`
+	if [ -z "$apn" -a -n "$imsi" ]; then
+		descr=`grep -e "^${imsi:0:5}" /etc/apn.conf | awk -F '=' '{ print $2 }' | awk -F';' '{ if ($2 == "'$user'") print $1,$3 }'`
+		IFS=';' read apn password <<EOF
+$(echo $descr)
+EOF
+	fi
+	if [ -z "$apn" ]; then
+		exit 1
+	fi
+	if [ -n "$user" -a -n "$password" ]; then
+		update_auth /etc/ppp/chap-secrets "$user" "gprs-auto" "$password"
+		update_auth /etc/ppp/pap-secrets "$user" "gprs-auto" "$password"
+	fi
+	if [ ! \( -h "$auto_peer" -a "$(readlink $auto_peer)" = "$tmp_peer" \) ]; then
+		rm -rf "$auto_peer"
+		ln -s "$tmp_peer" "$auto_peer"
+	fi
+	cat >"$tmp_peer" <<EOF
+$device
+115200
+nocrtscts
+connect '/usr/sbin/chat -v -f $tmp_chat'
+lock
+persist
+kdebug 0
+noipx
+nobsdcomp
+nodeflate
+noauth
+noipdefault
+usepeerdns
+defaultroute
+updetach
+local
+ipcp-accept-local
+ipcp-accept-remote
+mtu 1500
+${user:+name $user}
+${user:+remote-name gprs-auto}
+logfile /var/log/ppp.auto.log
+EOF
+	cat >"$tmp_chat" <<EOF
+ABORT 'BUSY'
+ABORT 'NO CARRIER'
+'' 'AT'
+OK 'AT+CGDCONT=1,"IP","$apn"'
+OK 'ATD*99#'
+TIMEOUT 30
+CONNECT
+EOF
+elif [ -n "$profile" -a -f "$dir_ppp_profiles/$profile" ]; then
+	device=$(cat "$dir_ppp_profiles/$profile" | sed 's,#.*,,;s,^\s*,,;s,\s*$,,;/^$/d' | head -1 | tr '\n' ' ')
+	preinit "$device" "$pincode"
+else
+	# no ppp profiles
+	exit 1
+fi
+/usr/sbin/pppd call $profile

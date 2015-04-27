@@ -1,0 +1,29 @@
+#!/bin/sh
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin
+export LD_LIBRARY_PATH=/usr/local/lib
+
+RELEASE=`head -n 1 /etc/RELEASE`
+
+echo "system release is '${RELEASE}'" > /dev/console
+
+. /etc/rc.fs
+
+ldconfig &
+
+
+# ppp_generic should be loaded before pppd is used (from rc.net)
+/sbin/modprobe ppp
+
+/etc/rc.net start
+
+#/sbin/clkctl
+
+modprobe ti_hecc
+modprobe can_raw
+/etc/rc.sound
+
+/etc/rc.pvr start
+
+if [ -x /etc/rc.local ]; then
+    . /etc/rc.local
+fi

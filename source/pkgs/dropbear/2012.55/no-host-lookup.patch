@@ -1,0 +1,12 @@
+diff -uNr dropbear-2012.55/options.h dropbear-2012.55-no-hosts-lookup/options.h
+--- dropbear-2012.55/options.h	2012-02-23 17:47:06.000000000 +0400
++++ dropbear-2012.55-no-hosts-lookup/options.h	2014-08-11 21:25:14.226123500 +0400
+@@ -144,7 +144,7 @@
+ #endif
+ 
+ /* Whether to do reverse DNS lookups. */
+-#define DO_HOST_LOOKUP
++/* #define DO_HOST_LOOKUP */
+ 
+ /* Whether to print the message of the day (MOTD). This doesn't add much code
+  * size */

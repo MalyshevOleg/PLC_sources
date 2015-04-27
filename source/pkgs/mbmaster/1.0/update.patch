@@ -1,0 +1,3282 @@
+diff -Nru a/app_log.c b/app_log.c
+--- a/app_log.c	2012-05-10 17:21:21.000000000 +0300
++++ b/app_log.c	2012-08-03 22:12:32.000000000 +0300
+@@ -24,6 +24,7 @@
+ 	[APP_ERR]	= LOG_ERR,
+ 	[APP_WARN]	= LOG_NOTICE,
+ 	[APP_INFO]	= LOG_INFO,
++	[APP_EINFO]	= LOG_INFO,
+ 	[APP_DEBUG]	= LOG_DEBUG,
+ };
+ 
+@@ -40,6 +41,7 @@
+ 	log_level = level;
+ }
+ 
++/* path can be NULL or empty, if so, stderr is used for logging */
+ int app_log_start(const char *path, const char *ident, const char *comment)
+ {
+ 	use_syslog = 0;
+@@ -52,7 +54,7 @@
+ 		log_ident[0] = 0; /* empty */
+ 	}
+ 
+-	if (path) {
++	if (path && path[0]) {
+ 		if (!strcmp(path, "syslog")) {
+ 			use_syslog = 1;
+ 			openlog(log_ident, 0, LOG_DAEMON);
+@@ -60,9 +62,13 @@
+ 			// leave log_file empty, so stderr will be used
+ 		} else {
+ 			log_file = fopen(path, "a+");
++			/* use stderr if opening log failed */
++#if 0
++			/* don't use stderr if opening log failed, return error to terminate */
+ 			if (log_file == NULL) {
+ 				return -1;
+ 			}
++#endif
+ 		}
+ 	}
+ 
+@@ -72,7 +78,9 @@
+ 
+ void app_log_stop(const char *comment)
+ {
+-	log_info(comment);
++	if (comment) {
++		log_info(comment);
++	}
+ 	if (use_syslog) {
+ 		closelog();
+ 		use_syslog = 0;
+diff -Nru a/app_log.h b/app_log.h
+--- a/app_log.h	2012-05-10 17:21:21.000000000 +0300
++++ b/app_log.h	2012-08-03 22:12:32.000000000 +0300
+@@ -5,8 +5,8 @@
+ #define APP_ERR		1	/* error condition: fatal (program abort) or not */
+ #define APP_WARN	2	/* abnormal/unexpected condition */
+ #define APP_INFO	3	/* normal log messages */
+-#define APP_DEBUG	4	/* debug log messages */
+-#define APP_ALWAYS	0	// info to be logged in any case (like fatal level)
++#define APP_EINFO	4	/* extra log messages */
++#define APP_DEBUG	5	/* debug log messages */
+ 
+ /** Set log level (default: LOG_INFO)
+  * @param level - new level
+@@ -21,12 +21,13 @@
+  * @param comment - log this comment first
+  * @return 0 - success, < 0 - error
+  *
+- * @note If applog_start was not called than app_log prints to stderr
++ * @note If applog_start was not called then app_log prints to stderr
++ * @note If path is NULL or empty then app_log prints to stderr
+  */
+ extern int app_log_start(const char *path, const char *ident, const char *comment);
+ 
+ /** Stop and cleanup logging (close file, etc.)
+- * @param comment - log this comment last before closing the log
++ * @param comment - (optional, can be NULL) log this comment last before closing the log
+  */
+ extern void app_log_stop(const char *comment);
+ 
+@@ -61,6 +62,11 @@
+ 		app_log(APP_INFO, fmt, ##__VA_ARGS__);\
+ 	} while(0)
+ 
++#define log_einfo(fmt, ...) \
++	do {\
++		app_log(APP_EINFO, fmt, ##__VA_ARGS__);\
++	} while(0)
++
+ /* debug logging stuff */
+ #ifdef DEBUG
+ #define log_debug(fmt, ...) \
+diff -Nru a/danfoss.h b/danfoss.h
+--- a/danfoss.h	2012-05-10 17:21:21.000000000 +0300
++++ b/danfoss.h	2012-08-06 14:31:21.000000000 +0300
+@@ -45,4 +45,15 @@
+ #define MBM_ARC_FILE_NO_BASE_MON		1000
+ #define MBM_ARC_HEADER_BASE_MON		0x1000
+ 
++/* it's possible to write up to 50 regs at a time to PKs (less than allowed by modbus 123) */
++#define MBM_MAX_WRITE_REGISTRES		50
++
++#define MBM_WHITE_LIST_WAIT_MINUTES	(5 * 60)
++#define MBM_WHITE_LIST_BASE_REG		0xc000
++/* the same as MBM_ARC_CHANNEL_COUNT */
++#define MBM_WHITE_LIST_PK_RECORDS	256
++
++#define MBM_WHITE_LIST_MAX_RECORDS (MBM_WHITE_LIST_PK_RECORDS * \
++										(MBM_SLAVE_ADDR_MAX - MBM_SLAVE_ADDR_MIN + 1))
++
+ #endif /* _DANFOSS_H_ */
+diff -Nru a/locks.c b/locks.c
+--- a/locks.c	1970-01-01 03:00:00.000000000 +0300
++++ b/locks.c	2012-08-03 11:18:26.000000000 +0300
+@@ -0,0 +1,57 @@
++#include <unistd.h>
++#include <fcntl.h>
++#include <sys/stat.h>
++#include <stdio.h>
++#include <errno.h>
++
++#include "locks.h"
++
++static int do_lock_file(const char *name, int operation, struct lock_t *lock)
++{
++    int fd;
++    int len;
++    char pid[16];
++
++    fd = open(name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
++    if (fd == -1)
++    {
++        return -1;
++    }
++
++    if (lockf(fd, operation, 0) == -1)
++    {
++        return (errno == EACCES || errno == EAGAIN) ? 1 : -1;
++    }
++
++    len = snprintf(pid, sizeof(pid), "%u\n", getpid());
++
++    write(fd, pid, len);
++
++    ftruncate(fd, len);
++
++    if (lock)
++    {
++        lock->fd = fd;
++    }
++
++    return 0;
++}
++
++int lock_file(const char *name, struct lock_t *lock)
++{
++    return do_lock_file(name, F_LOCK, lock);
++}
++
++int trylock_file(const char *name, struct lock_t *lock)
++{
++    return do_lock_file(name, F_TLOCK, lock);
++}
++
++int unlock_file(const struct lock_t *lock)
++{
++    ftruncate(lock->fd, 0);
++    lockf(lock->fd, F_ULOCK, 0);
++    close(lock->fd);
++
++    return 0;
++}
+diff -Nru a/locks.h b/locks.h
+--- a/locks.h	1970-01-01 03:00:00.000000000 +0300
++++ b/locks.h	2012-08-03 11:18:26.000000000 +0300
+@@ -0,0 +1,24 @@
++#ifndef LOCKS_H
++#define LOCKS_H
++
++struct lock_t
++{
++    int fd;
++};
++
++/*
++ * lock_file() and trylock_file() return value:
++ *   0 on success (file is successfully locked)
++ *  -1 on error (errno) indicates error code
++ *   1 if file is already locked or file is mmap()'ed by another process
++ *
++ *  see lockf(3) for details
++ */
++
++int lock_file(const char *name, struct lock_t *lock);
++
++int trylock_file(const char *name, struct lock_t *lock);
++
++int unlock_file(const struct lock_t *lock);
++
++#endif /* LOCKS_H */
+diff -Nru a/main.c b/main.c
+--- a/main.c	2012-05-10 17:21:21.000000000 +0300
++++ b/main.c	2012-09-13 17:24:47.000000000 +0300
+@@ -1,10 +1,12 @@
+ #include <unistd.h>
++#include <signal.h>
+ #include <stdio.h>
+ #include <string.h>
+ #include <errno.h>
+ #include <time.h>
+ #include <stdlib.h>
+ 
++#include "locks.h"
+ #include "mb_master.h"
+ #include "mbm_strings.h"
+ #include "app_log.h"
+@@ -13,19 +15,54 @@
+ #include "mbm_task_modbus.h"
+ #include "mbm_task_clean_fs.h"
+ 
++#define MBM_GLOBAL_LOCK_FILE	"/var/lock/dk_common.lock"
++#define MBM_APP_LOCK_FILE_TPL	"/var/lock/%s-%s.lock"
++
+ /* default config */
+-static mbm_config def_cfg = {
+-	.root_dir = "/home/alex/owen/tmp/ftp",
+-	
+-	.tty_dev = "/dev/ttyS1",
+-	.baud_rate = 9600,
+-	.parity = 'N',
+-	.data_bits = 8,
+-	.stop_bits = 1,
+-	
++static mbm_config_t def_cfg = {
++	.root_dir = "/home",
++
++	.port = {
++		.tty_dev = "/dev/ttyS1",
++		.baud_rate = 115200,
++		.parity = 'N',
++		.data_bits = 8,
++		.stop_bits = 1,
++	},
++
++	.delay_min = MBM_WHITE_LIST_WAIT_MINUTES,
++};
++
++/* Note: name should not be more than 20 char long - see app_lock_file var in main() */
++const char *app_mode_names[MBM_MODE_COUNT] = {
++	[MBM_MODE_FETCH_ARCHIVES] = "fetch-arcs",
++	[MBM_MODE_MAKE_WHITE_LIST] = "make-wl",	
++	[MBM_MODE_SET_WHITE_LIST] = "set-wl",
++	[MBM_MODE_SYNC_TIME] = "sync-time",
++};
++
++const char *app_mode_log_sub_dirs[MBM_MODE_COUNT] = {
++	[MBM_MODE_FETCH_ARCHIVES] = SUBDIR_SERVICE_LOG_FILE,
++	[MBM_MODE_MAKE_WHITE_LIST] = SUBDIR_SERVICE_LOG_RSSI,
++	[MBM_MODE_SET_WHITE_LIST] = SUBDIR_SERVICE_LOG_SETLIST,
++	[MBM_MODE_SYNC_TIME] = NULL,	/* no log */
+ };
+ 
+-static int mbm_init(int argc, char *argv[], mbm_context *ctx)
++static void mbm_done(mbm_context_t *ctx);
++
++static mbm_context_t *ctxp = NULL;
++
++void sig_handler(int signum)
++{
++	printf("signal %d\n", signum);
++	if (ctxp) {
++		mbm_done(ctxp);
++		printf("memory freeed\n");
++	}
++	exit(0);
++}
++
++static int mbm_init(int argc, char *argv[], mbm_context_t *ctx)
+ {
+ 	int r;
+ 	time_t start_time = time(NULL);
+@@ -48,10 +85,15 @@
+ 	}
+ 	mbm_dump_config(ctx);
+ 
+-	/* build and check root dir */
+-	r = mbm_init_root_dir(ctx);
+-	if (r) {
+-		return r;
++	/* set log subdir */
++	ctx->log_sub_dir = app_mode_log_sub_dirs[ctx->cfg.mode];
++
++	/* build and check root dir as required: skip it for sync-time mode */
++	if (ctx->cfg.mode != MBM_MODE_SYNC_TIME) {
++		r = mbm_init_root_dir(ctx);
++		if (r) {
++			return r;
++		}
+ 	}
+ 
+ 	/* prepare start date-time values */
+@@ -82,15 +124,28 @@
+ 	ctx->hostname_len = strlen(ctx->hostname);
+ #endif
+ 
+-	/* make up log dir and file name, create subdirs as need */
+-	r = mbm_init_log_fs(ctx);
++	/* make up log dir and file name, create subdirs as need: skip it for sync-time mode */
++	if (ctx->cfg.mode == MBM_MODE_SYNC_TIME) {
++		ctx->work_path[0] = 0;
++	} else {
++		r = mbm_init_log_fs(ctx);
++		/* if error use stderr for logging and continue */
++		if (r) {
++			ctx->work_path[0] = 0;
++			r = 0;
++		}
++	}
++
+ 	return r;
+ }
+ 
+-static int mbm_setup(mbm_context *ctx)
++static int mbm_setup(mbm_context_t *ctx)
+ {
++	signal(SIGINT, &sig_handler);
++	signal(SIGTERM, &sig_handler);
++	ctxp = ctx;
++
+ 	/* estimate scan buffer size and allocate it */
+-	
+ 	ctx->fname_size_log = 20 + ctx->hostname_len + 1;	/* YYYY-mm-DD-HH-MM-hostname-NN &0 */
+ 	ctx->fname_size_arc = 34 + 1;						/* XXXXXXXX-YYYY-mm-DD-HH-MM-XXXXXXXX &0 */
+ 	
+@@ -106,12 +161,48 @@
+ 		return -1;
+ 	}
+ 
++	do {
++		if (ctx->cfg.mode == MBM_MODE_MAKE_WHITE_LIST) {
++			ctx->wl.src_tab = malloc(sizeof(*(ctx->wl.src_tab)));
++			if (ctx->wl.src_tab) {
++				break; /* OK */
++			}
++			log_err(mbm_str_err_wl_src_tab_alloc, sizeof(*(ctx->wl.src_tab)));
++		} else if (ctx->cfg.mode == MBM_MODE_SET_WHITE_LIST) {
++			ctx->wl.tab = malloc(sizeof(*(ctx->wl.tab)));
++			if (ctx->wl.tab) {
++				break; /* OK */
++			}
++			log_err(mbm_str_err_wl_tab_alloc, sizeof(*(ctx->wl.tab)));
++		} else {
++			/* do nothing for other modes */
++			break; /* OK */
++		}
++
++		/* allocation failed */
++		free(ctx->scan_buf);
++		ctx->scan_buf = NULL;
++		ctx->scan_buf_size = 0;
++		return -1;
++	} while (0);
++
+ 	log_debug("scan_buf allocated, size=%d bytes", ctx->scan_buf_size);
+ 	return 0;
+ }
+ 
+-static void mbm_done(mbm_context *ctx)
++static void mbm_done(mbm_context_t *ctx)
+ {
++	if (ctx->cfg.mode == MBM_MODE_MAKE_WHITE_LIST) {
++		if (ctx->wl.src_tab) {
++			free(ctx->wl.src_tab);
++			ctx->wl.src_tab = NULL;
++		}
++	} else if (ctx->cfg.mode == MBM_MODE_SET_WHITE_LIST) {
++		if (ctx->wl.tab) {
++			free(ctx->wl.tab);
++			ctx->wl.tab = NULL;
++		}
++	}
+ 	/* free scan buffer */
+ 	if (ctx->scan_buf) {
+ 		free(ctx->scan_buf);
+@@ -120,10 +211,73 @@
+ 	}
+ }
+ 
++static int run_app_mode(mbm_context_t *ctx)
++{
++	int r;
++
++	if (ctx->cfg.mode != MBM_MODE_SYNC_TIME) {
++		r = mbm_setup(ctx);
++		if (r) {
++			/* can't even clean logs */
++			return r;
++		}
++	}
++
++	mbm_modbus_init(ctx);
++	if (ctx->mb) {
++		mbm_sync_time(ctx);
++	}
++
++	switch (ctx->cfg.mode) {
++		case MBM_MODE_MAKE_WHITE_LIST:
++			if (ctx->mb) {
++				r = mbm_make_white_list(ctx);
++			}
++			break;
++
++		case MBM_MODE_SET_WHITE_LIST:
++			if (ctx->mb) {
++				r = mbm_set_white_list(ctx);
++			}
++			break;
++
++		case MBM_MODE_SYNC_TIME:
++			/* do nothing more */
++			break;
++
++		default:
++		case MBM_MODE_FETCH_ARCHIVES:
++			{
++				if (mbm_init_arc_fs(ctx) == 0) {
++					if (ctx->mb) {
++						mbm_fetch_archives(ctx);
++					}
++					mbm_clean_archives(ctx);
++				} else {
++					log_err(mbm_str_err_fail_init_arc_fs);
++				}
++			}
++			break;
++	}
++	
++	mbm_modbus_done(ctx);
++
++	if (ctx->cfg.mode != MBM_MODE_SYNC_TIME) {
++		mbm_clean_logs(ctx);
++
++		mbm_done(ctx);
++	}
++
++	return r;
++}
++
+ int main(int argc, char *argv[])
+ {
+-	int r, arc_fs_init = 0;
+-	mbm_context ctx;
++	int r;
++	mbm_context_t ctx;
++	char app_lock_file[sizeof(MBM_APP_LOCK_FILE_TPL) - 1 - 4 + sizeof(APP_NAME) - 1 + 20 + 1];
++	struct lock_t app_lock;
++	struct lock_t global_lock;
+ 
+ 	/* initialization before log start */
+ 	r = mbm_init(argc, argv, &ctx);
+@@ -133,40 +287,56 @@
+ 
+ 	/* init logging */
+ 	r = app_log_start(ctx.work_path, APP_NAME, mbm_str_log_started);
++#if 0
++	/* result is always OK - when log init fails, stderr is used instead */
+ 	if (r) {
+ 		pr_err("failed to init log '%s': %s\n", 
+ 				ctx.work_path, strerror(errno));
+ 		return r;
+ 	}
++#endif
+ 
+-	r = mbm_setup(&ctx);
+-	if (r) {
+-		return r;
++	{
++		const char *app_mode_titles[MBM_MODE_COUNT] = {
++			[MBM_MODE_FETCH_ARCHIVES] = mbm_str_am_fetch_arcs,
++			[MBM_MODE_MAKE_WHITE_LIST] = mbm_str_am_make_wl,	
++			[MBM_MODE_SET_WHITE_LIST] = mbm_str_am_set_wl,
++			[MBM_MODE_SYNC_TIME] = mbm_str_am_sync_time,
++		};
++		log_info(mbm_str_app_id, APP_NAME, APP_VERSION, app_mode_titles[ctx.cfg.mode]);
+ 	}
+ 
+-	/* log is available now */	
+ 	do {
+-		r = mbm_init_arc_fs(&ctx);
+-		arc_fs_init = (r == 0);
+-		if (!arc_fs_init) {
+-			log_err(mbm_str_err_fail_init_arc_fs);
+-		}
+-
+-		if (mbm_modbus_init(&ctx) == 0) {	/* init lib, assign addresses to salves */
+-			if (arc_fs_init) {
+-				mbm_fetch_archives(&ctx);
++		/* prevent more than 1 instance of the app+mode to run simultaneously,
++		* note: distinguish between app modes
++		*/
++		sprintf(app_lock_file, MBM_APP_LOCK_FILE_TPL, APP_NAME, app_mode_names[ctx.cfg.mode]);
++		r = trylock_file(app_lock_file, &app_lock);
++		if (r) {
++			if (r < 0) {
++				/* sys err */
++				log_err(mbm_str_err_fail_lock, app_lock_file, strerror(errno));
++			} else {
++				/* already locked */
++				log_info(mbm_str_app_mode_running, app_mode_names[ctx.cfg.mode]);
+ 			}
+-			mbm_sync_time(&ctx);
+-			mbm_modbus_done(&ctx);
++			break;
+ 		}
+ 
+-		if (arc_fs_init) {
+-			mbm_clean_archives(&ctx);
++		/* wait while another app using modbus finishes its work and acquire global modbus lock */
++		log_info(mbm_str_getting_modbus_lock);
++		r = lock_file(MBM_GLOBAL_LOCK_FILE, &global_lock);
++		if (r) {
++			log_err(mbm_str_err_fail_lock, MBM_GLOBAL_LOCK_FILE, strerror(errno));
++			unlock_file(&app_lock);
++			break;
+ 		}
+-		mbm_clean_logs(&ctx);
+-	} while (0);
+ 
+-	mbm_done(&ctx);
++		r = run_app_mode(&ctx);
++
++		unlock_file(&global_lock);
++		unlock_file(&app_lock);
++	}while (0);
+ 
+ 	/* stop logging */
+ 	app_log_stop(mbm_str_log_stopped);
+diff -Nru a/Makefile b/Makefile
+--- a/Makefile	2012-05-10 17:21:21.000000000 +0300
++++ b/Makefile	2012-09-13 17:24:47.000000000 +0300
+@@ -1,15 +1,27 @@
+-VERSION=1.0.0
++VERSION=1.2.9
+ APP_NAME=mb_master
++DEBUG=0
++
++SRCDIR=.
++DEPDIR=$(SRCDIR)/.deps
++# for BS only
++VPATH=$(SRCDIR)
+ 
+ CFLAGS=-Wall
+ ifndef X86
+-CROSS_COMPILE=/home/alex/owen/buildsys3/cross/bin/arm-unknown-linux-gnueabi-
++CROSS_COMPILE=/home/alex/owen/buildsys3/crossat91/bin/arm-unknown-linux-gnueabi-
+ else
+ CROSS_COMPILE=
+ endif
+-#CFLAGS+=-DDEBUG
+ LDFLAGS_COMMON=-lmodbus
+ LDFLAGS=$(LDFLAGS_COMMON) -lmbmstrings -L. -Wl,-rpath,.
++INCLUDES=-I. -I$(SRCDIR)
++CFLAGS+=$(INCLUDES)
++
++ifeq ($(DEBUG),1)
++CFLAGS+=-DDEBUG
++VERSION:=$(VERSION)d
++endif
+ 
+ CC=$(CROSS_COMPILE)gcc
+ STRIP=$(CROSS_COMPILE)strip
+@@ -24,16 +36,8 @@
+     mbm_fs.c \
+     mbm_modbus_func.c \
+     mbm_task_clean_fs.c \
+-    mbm_task_modbus.c
+-
+-APP_HEADERS = app_log.h \
+-    danfoss.h \
+-    mb_master.h \
+-    mbm_args.h \
+-    mbm_fs.h \
+-    mbm_modbus_func.h \
+-    mbm_task_clean_fs.h \
+-    mbm_task_modbus.h
++    mbm_task_modbus.c \
++    locks.c
+ 
+ TEST_SRCS = test_set_addr.c
+ 
+@@ -43,14 +47,14 @@
+ $(APP): version.h $(APP_OBJS) $(STRLIB)
+ 	$(CC) -o $@ $(APP_OBJS) $(LDFLAGS)
+ 
+-$(STRLIB): mbm_strings.c mbm_strings.h
+-	$(CC) -c -fPIC mbm_strings.c -o mbm_strings.o
++$(STRLIB): $(SRCDIR)/mbm_strings.c $(SRCDIR)/mbm_strings.h
++	$(CC) -c -fPIC $(SRCDIR)/mbm_strings.c -o mbm_strings.o
+ 	$(CC) -shared -fPIC -o $@ mbm_strings.o
+ 
+ version.h: Makefile
+-	@./version.sh $(APP_NAME) $(VERSION)
++	@$(SRCDIR)/version.sh $(APP_NAME) $(VERSION)
+ 
+--include $(APP_OBJS:.o=.d)
++-include $(APP_OBJS:%.o=$(DEPDIR)/%.d)
+ 
+ strip: $(APP) $(STRLIB)
+ 	$(STRIP) $^
+@@ -58,17 +62,17 @@
+ clean:
+ 	@rm -f *.o *.d
+ 	@rm -f $(APP) $(STRLIB) $(TEST)
++	rm -rf $(DEPDIR)
+ 
+-cleanall:
+-	@rm -f *.o *.d
+-	@rm -f $(APP) $(STRLIB) $(TEST)
++cleanall: clean
+ 	@rm -f version.h
+ 
+ $(TEST): test_set_addr.o
+ 	$(CC) -o $@ $^ $(LDFLAGS_COMMON)
+ 
+--include test_set_addr.d
++-include $(DEPDIR)/test_set_addr.d
+ 
+-%.o: %.c
+-	$(CC) -c $(CFLAGS) $*.c -o $*.o
+-	gcc -MM $(CFLAGS) $*.c > $*.d
++%.o: $(SRCDIR)/%.c
++	@mkdir -p $(DEPDIR)
++	$(CC) -MM $(CFLAGS) $(SRCDIR)/$*.c > $(DEPDIR)/$*.d
++	$(CC) -c $(CFLAGS) -o $@ $<
+diff -Nru a/mbm_args.c b/mbm_args.c
+--- a/mbm_args.c	2012-05-10 17:21:21.000000000 +0300
++++ b/mbm_args.c	2012-08-14 15:48:15.000000000 +0300
+@@ -10,15 +10,20 @@
+ 
+ #include "mbm_args.h"
+ 
+-static void mbm_usage(mbm_context *ctx)
++static void mbm_usage(mbm_context_t *ctx)
+ {
+-	mbm_config *dcfg = ctx->def_cfg;
++	mbm_config_t *dcfg = ctx->def_cfg;
+ 	
+ 	printf(
+ 		APP_NAME " (" APP_VERSION "): perform modbus master's tasks\n"
+ 		"Usage:\n"
+ 		"   " APP_NAME " options\n"
+ 		"\nOptions:\n"
++		"  -m mode        what should be done (default: %d):\n"
++		"                   0 - fetch archives\n"
++		"                   1 - make white list\n"
++		"                   2 - load white list to slaves\n"
++		"                   3 - synchronize time only on slaves\n"
+ 		"  -R rootdir     root directory of the dir/file hierarchy on FTP (default: %s)\n"
+ 		"\n"
+ 		"  -t ttydev      tty device connected to the bus (default: %s)\n"
+@@ -27,22 +32,25 @@
+ 		"  -d databits    data bits (default: %d)\n"
+ 		"  -s stopbits    stop bits (default: %d)\n"
+ 		"\n"
+-		"  -l level       log level, default: INFO\n",
+-		dcfg->root_dir,
+-		dcfg->tty_dev, dcfg->baud_rate, dcfg->parity, 
+-		dcfg->data_bits, dcfg->stop_bits
++		"  -l level       log level, default: INFO\n"
++		"\nmode-specific options:\n"
++		"  -D minutes     delay before reding archives for white list statistics (default: %d)",
++		(int)(dcfg->mode), dcfg->root_dir,
++		dcfg->port.tty_dev, dcfg->port.baud_rate, dcfg->port.parity, 
++		dcfg->port.data_bits, dcfg->port.stop_bits,
++		dcfg->delay_min
+ 	);
+ }
+ 
+-int mbm_parse_args(int argc, char *argv[], mbm_context *ctx)
++int mbm_parse_args(int argc, char *argv[], mbm_context_t *ctx)
+ {
+-	mbm_config *cfg;
++	mbm_config_t *cfg;
+ 	int opt;
+ 	opterr = 0;
+ 	
+ 	cfg = &ctx->cfg;
+ 	
+-	while ((opt = getopt(argc, argv, "hR:t:b:p:d:s:l:")) != -1) {
++	while ((opt = getopt(argc, argv, "hm:R:t:b:p:d:s:l:D:")) != -1) {
+ 		switch (opt) {
+ 		case 'h':
+ 			ctx->flags.need_help = 1;
+@@ -51,31 +59,43 @@
+ 			pr_err("incorrect option '%c' - ignored\n", optopt);
+ 			break;
+ 
++		case 'm':
++			cfg->mode = atoi(optarg);
++			break;
+ 		case 'R':
+ 			cfg->root_dir = optarg;
+ 			break;
+ 
+ 		case 't':
+-			cfg->tty_dev = optarg;
++			cfg->port.tty_dev = optarg;
+ 			break;
+ 		case 'b':
+-			cfg->baud_rate = atoi(optarg);
++			cfg->port.baud_rate = atoi(optarg);
+ 			break;
+ 		case 'p':
+-			cfg->parity = *optarg;
++			cfg->port.parity = *optarg;
+ 			break;
+ 		case 'd':
+-			cfg->data_bits = atoi(optarg);
++			cfg->port.data_bits = atoi(optarg);
+ 			break;
+ 		case 's':
+-			cfg->stop_bits = atoi(optarg);
++			cfg->port.stop_bits = atoi(optarg);
+ 			break;
+ 
+ 		case 'l':
+ 			cfg->log_level = atoi(optarg);
+ 			app_log_set_level(cfg->log_level);
+ 			break;
+-			
++
++		case 'D':
++			{
++				int val = atoi(optarg);
++				if (val >= 0) {
++					cfg->delay_min = val;
++				}
++			}
++			break;
++		
+ 		default:
+ 			/* ignore */
+ 			break;
+@@ -86,24 +106,30 @@
+ 		mbm_usage(ctx);
+ 		return 0;
+ 	}
+-	if (cfg->parity != 'N' && cfg->parity != 'E' &&
+-		cfg->parity != 'O') {
++	if (cfg->port.parity != 'N' && cfg->port.parity != 'E' &&
++		cfg->port.parity != 'O') {
+ 		pr_err("parity option is incorrect\n");
+ 		mbm_usage(ctx);
+ 		return -1;
+ 	}
++	if (cfg->mode < 0 || cfg->mode >= MBM_MODE_COUNT) {
++		pr_err("mode is incorrect\n");
++		mbm_usage(ctx);
++		return -1;
++	}
+ 	return 0;
+ }
+ 
+ #ifdef DEBUG
+-void mbm_dump_config(mbm_context *ctx)
++void mbm_dump_config(mbm_context_t *ctx)
+ {
+-	mbm_config *cfg = &ctx->cfg;
++	mbm_config_t *cfg = &ctx->cfg;
+ 	
+ 	pr_debug("Used config:\n");
+ 	pr_debug("root_dir=%s\n", cfg->root_dir);
+ 	pr_debug("tty: device=%s, baud_rate=%d, parity=%c, data_bits=%d, stop_bits=%d\n",
+-		cfg->tty_dev, cfg->baud_rate, cfg->parity, cfg->data_bits, cfg->stop_bits);
++		cfg->port.tty_dev, cfg->port.baud_rate, cfg->port.parity, 
++		cfg->port.data_bits, cfg->port.stop_bits);
+ }
+ #endif
+ 
+diff -Nru a/mbm_args.h b/mbm_args.h
+--- a/mbm_args.h	2012-05-10 17:21:21.000000000 +0300
++++ b/mbm_args.h	2012-08-04 18:45:24.000000000 +0300
+@@ -2,10 +2,10 @@
+ #define _MBM_ARGS_H_
+ 
+ /* @return 0 - success, <0 - error */
+-extern int mbm_parse_args(int argc, char *argv[], mbm_context *ctx);
++extern int mbm_parse_args(int argc, char *argv[], mbm_context_t *ctx);
+ 
+ #ifdef DEBUG
+-extern void mbm_dump_config(mbm_context *ctx);
++extern void mbm_dump_config(mbm_context_t *ctx);
+ #else
+ #define mbm_dump_config(ctx);
+ #endif
+diff -Nru a/mb_master.h b/mb_master.h
+--- a/mb_master.h	2012-05-10 17:21:21.000000000 +0300
++++ b/mb_master.h	2012-08-14 20:17:42.000000000 +0300
+@@ -58,26 +58,57 @@
+ #define SUBDIR_ARCHIVE_CUR		"current"
+ #define SUBDIR_ARCHIVE_MON	"monthly"
+ #define SUBDIR_SERVICE			"service"
+-#define SUBDIR_SERVICE_LOG		"LogFile"
++#define SUBDIR_SERVICEOK		"serviceOK"
+ 
+-typedef struct mbm_config {
+-	int log_level;
+-	const char *root_dir;	/* target files root dir */
++#define SUBDIR_SERVICE_SETLIST	"setList"
++
++#define SUBDIR_SERVICE_LOG_FILE		"LogFile"
++#define SUBDIR_SERVICE_LOG_RSSI		"LogRSSI"
++#define SUBDIR_SERVICE_LOG_SETLIST	"LogSetList"
++
++#define FILE_NAME_SETLIST				"setList.csv"
++
++#define MBM_CSV_FIELD_SEP			";"
++#define MBM_CSV_FIELD_SEP_CHAR	';'
+ 
++typedef enum mbm_mode {
++	MBM_MODE_FETCH_ARCHIVES = 0,
++	MBM_MODE_MAKE_WHITE_LIST,
++	MBM_MODE_SET_WHITE_LIST,
++	MBM_MODE_SYNC_TIME,
++
++	MBM_MODE_COUNT,
++} mbm_mode_t;
++
++typedef struct mbm_port_config {
+ 	const char *tty_dev;	/* tty device for access to the bus */
+ 	int baud_rate;
+ 	char parity;
+ 	int data_bits;
+ 	int stop_bits;
+-	
+-} mbm_config;
++} mbm_port_config_t;
+ 
++typedef struct mbm_config {
++	int log_level;
++	const char *root_dir;	/* target files root dir */
++
++	mbm_mode_t mode;	/* what should be done: fetch arcs, make white list, etc. */
++
++	mbm_port_config_t port;
++
++	int delay_min;		/* for make white list mode (1) - alternative delay after resetting WLs on devices */
++} mbm_config_t;
++
++/* current version length is 5, e.g. "v1.03" */
++#define MBM_MAX_SLAVE_VER_LEN		10
+ typedef struct mbm_slave_dev {
++	int addr;
+ 	char dev_name[6 + 1]; /* zero terminated */
+ 	uint32_t dev_sn; /* MODBUS_GET_INT32_FROM_INT16 - low register becomes high word in the result dword */
+ 	char dev_sn_str[8 + 1];
+ 	uint16_t status;
+ 	int sensor_count;		/* from status - count of sensors being archived by the slave */
++	char fw_ver[MBM_MAX_SLAVE_VER_LEN + 1];
+ 	struct {
+ 		unsigned addr_check_passed: 1;
+ 
+@@ -87,11 +118,40 @@
+ 		unsigned fail_radio: 1;
+ 		unsigned fail_flash: 1;
+ 	} flags;
+-} mbm_slave_dev;
++} mbm_slave_dev_t;
++
++typedef struct mbm_wl_src_rec {
++	uint32_t arc_id;
++	uint32_t pk_id;
++	int16_t rssi;
++}  __attribute__((packed)) mbm_wl_src_rec_t;
++
++typedef struct mbm_wl_rec {
++	uint32_t arc_id;
++	uint32_t pk_id;
++}  __attribute__((packed)) mbm_wl_rec_t;
++
++#define MBM_WL_SRC_TAB_RECORD_MARK(tab, rec) (tab)->marked[(rec)/8] |= (1 << ((rec) % 8))
++#define MBM_WL_SRC_TAB_RECORD_MARKED(tab, rec) ((tab)->marked[(rec)/8] & (1 << ((rec) % 8)))
++/* WL source table */
++typedef struct mbm_wl_src_tab {
++	mbm_wl_src_rec_t tab[MBM_WHITE_LIST_MAX_RECORDS];
++	size_t count;		/* filled records count */
++	uint8_t marked[MBM_WHITE_LIST_MAX_RECORDS / 8 + 1]; /* bit array - every bit indicates whether or not respective record is marked */
++	size_t marked_count;
++} mbm_wl_src_tab_t;
++
++/* WL table - made when loading white list from a file */
++typedef struct mbm_wl_tab {
++	mbm_wl_rec_t tab[MBM_WHITE_LIST_MAX_RECORDS];
++	size_t count;		/* filled records count */
++} mbm_wl_tab_t;
+ 
+ typedef struct mbm_context {
+-	mbm_config *def_cfg;
+-	mbm_config cfg;
++	mbm_config_t *def_cfg;
++	mbm_config_t cfg;
++
++	const char *log_sub_dir;		/* log sub dir depending on app mode */
+ 
+ 	struct {
+ 		unsigned need_help: 1;	/* help requested */
+@@ -113,6 +173,7 @@
+ 
+ 	char work_path[MBM_PATH_MAX];
+ 	size_t work_path_len;
++	
+ 	char log_file_name[MBM_DATETIME_LEN + 1 + 1 + MBM_MAX_HOSTNAME_LEN + 2 + 1];
+ 	size_t log_file_name_len;
+ 	
+@@ -133,10 +194,16 @@
+ 
+ 	/* modbus data */
+ 	modbus_t *mb;			/* libmodbus context */
+-	mbm_slave_dev mb_slave[MBM_SLAVE_ADDR_MAX + 1]; /* indexed by slave addr */
++
++	mbm_slave_dev_t mb_slave[MBM_SLAVE_ADDR_MAX + 1]; /* indexed by slave addr */
+ 	int mb_max_addr;		/* max slave addr assigned:  MBM_MB_SLAVE_ADDR_ MIN..MAX*/
+ 	int mb_slaves_count;		/* number of slaves successfully passed addr check */
+-} mbm_context;
++
++	union {
++		mbm_wl_src_tab_t *src_tab;		/* white list source table */
++		mbm_wl_tab_t *tab;
++	} wl;					/* white list's mode-dependent data */
++} mbm_context_t;
+ 
+ #define pr_err(fmt, ...) \
+ 	do {\
+diff -Nru a/mbm_fs.c b/mbm_fs.c
+--- a/mbm_fs.c	2012-05-10 17:21:21.000000000 +0300
++++ b/mbm_fs.c	2012-08-14 15:48:15.000000000 +0300
+@@ -21,7 +21,7 @@
+ /* Local methods      */
+ /******************/
+ 
+-/* build root_dir / sub_name and create the directory 
++/* build parent_dir / sub_dir and create the directory 
+  * check that length of result dir with terminating 0 <= MBM_PATH_MAX
+  * Doesn't use log - it may not have beed started yet
+  * Note: root_dir MUST have length >= MBM_PATH_MAX
+@@ -31,31 +31,31 @@
+  *	<0 = -errno fail:
+  *	
+  */
+-static int init_subdir(char *root_dir, const char *sub_name)
++static int init_sub_dir(char *parent_dir, const char *sub_dir)
+ {
+ 	struct stat sbuf;
+-	size_t root_len, sub_len;
++	size_t parent_len, sub_len;
+ 	int r;
+ 
+-	root_len = strlen(root_dir);
+-	sub_len = strlen(sub_name);
+-	if (root_len + 1 + sub_len + 1 > MBM_PATH_MAX) {
++	parent_len = strlen(parent_dir);
++	sub_len = strlen(sub_dir);
++	if (parent_len + 1 + sub_len + 1 > MBM_PATH_MAX) {
+ 		return -ENAMETOOLONG;
+ 	}
+ 
+-	root_dir[root_len] = '/';
+-	memcpy(&root_dir[root_len + 1], sub_name, sub_len + 1);
++	parent_dir[parent_len] = '/';
++	memcpy(&parent_dir[parent_len + 1], sub_dir, sub_len + 1);
+ 
+-	r = stat(root_dir, &sbuf);
++	r = stat(parent_dir, &sbuf);
+ 	if (!r) {
+-		if (!S_ISDIR(sbuf.st_mode)) {
+-			return -ENOTDIR;		/* exists but not directory */
++		if (!(S_ISDIR(sbuf.st_mode) || S_ISLNK(sbuf.st_mode))) {
++			return -ENOTDIR;		/* exists but either directory nor symlink*/
+ 		}
+ 		return 0;				/* exists and directory - OK */
+ 	}
+ 	
+ 	/* some error - assume path does not exist - create */
+-	r = mkdir(root_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
++	r = mkdir(parent_dir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+ 	if (r) {
+ 		return -errno;			/* directory creation failed */
+ 	}
+@@ -68,9 +68,9 @@
+ /******************/
+ 
+ /* log is not started yet */
+-int mbm_init_root_dir(mbm_context *ctx)
++int mbm_init_root_dir(mbm_context_t *ctx)
+ {
+-	mbm_config *cfg = &ctx->cfg;
++	mbm_config_t *cfg = &ctx->cfg;
+ 
+ 	/* normalize root dir path and check */
+ 	if (!realpath(cfg->root_dir, ctx->root_dir)) {
+@@ -83,7 +83,7 @@
+ 	return 0;
+ }
+ 
+-int mbm_init_log_fs(mbm_context *ctx)
++int mbm_init_log_fs(mbm_context_t *ctx)
+ {
+ 	int r;
+ 	DIR *d;
+@@ -91,17 +91,22 @@
+ 	struct dirent entry;
+ 	int max_order;
+ 
++	if (!ctx->log_sub_dir) {
++		/* log to stderr, ignore the log by redirecting  to /dev/null as need */
++		return -1;
++	}
++
+ 	/* check result length to prevent logging in mbm_ensure_subdir */
+-	ctx->work_path_len = ctx->root_dir_len + 1 + sizeof(SUBDIR_SERVICE) + sizeof(SUBDIR_SERVICE_LOG) -1; /* / + service/ + log (w/o terminating 0) */
++	ctx->work_path_len = ctx->root_dir_len + 1 + sizeof(SUBDIR_SERVICE) + strlen(ctx->log_sub_dir); /* / + service/ + log (w/o terminating 0) */
+ 	if (ctx->work_path_len >= sizeof(ctx->work_path)) {
+ 		pr_err("log directory path too long: %u\n", (unsigned)ctx->work_path_len);
+ 		return -1;
+ 	}
+ 
+ 	strcpy(ctx->work_path, ctx->root_dir);
+-	r = init_subdir(ctx->work_path, SUBDIR_SERVICE);
++	r = init_sub_dir(ctx->work_path, SUBDIR_SERVICE);
+ 	if (r >= 0) {
+-		r = init_subdir(ctx->work_path, SUBDIR_SERVICE_LOG);
++		r = init_sub_dir(ctx->work_path, ctx->log_sub_dir);
+ 	}
+ 
+ 	if (r < 0) {
+@@ -180,7 +185,7 @@
+ 	return 0;
+ }
+ 
+-int mbm_init_arc_fs(mbm_context *ctx)
++int mbm_init_arc_fs(mbm_context_t *ctx)
+ {
+ 	int r;
+ 	int i;
+@@ -190,7 +195,7 @@
+ 
+ 	/* create archive dir */
+ 	log_debug("initializing archive dir: %s/%s", ctx->work_path, SUBDIR_ARCHIVE);
+-	r = mbm_init_subdir(ctx, ctx->work_path, SUBDIR_ARCHIVE);
++	r = mbm_init_sub_dir(ctx->work_path, SUBDIR_ARCHIVE, ctx->root_dir_len);
+ 	if (r) {
+ 		return r;
+ 	}
+@@ -202,7 +207,7 @@
+ 		/* init work_path for next cycle */
+ 		ctx->work_path[arc_dir_len] = 0;
+ 		log_debug("initializing archive subdir: %s/%s", ctx->work_path, mbm_arc_subdirs[i]);
+-		r = mbm_init_subdir(ctx, ctx->work_path, mbm_arc_subdirs[i]);
++		r = mbm_init_sub_dir(ctx->work_path, mbm_arc_subdirs[i], ctx->root_dir_len);
+ 		if (r) {
+ 			break;
+ 		}
+@@ -222,22 +227,22 @@
+ }
+ 
+ /* here we can use log because it's assumed to have been started */
+-int mbm_init_subdir(mbm_context *ctx, char *root_dir, const char *sub_name)
++int mbm_init_sub_dir(char *parent_dir, const char *sub_dir, size_t root_dir_len)
+ {
+ 	int r;
+ 
+ 	/* root_dir will contain full sub-directory path upon successful call */
+-	r = init_subdir(root_dir, sub_name);
++	r = init_sub_dir(parent_dir, sub_dir);
+ 	
+ 	switch (r) {
+ 		case 0:
+ 			break;
+ 		case 1:
+-			log_info(mbm_str_dir_created, &root_dir[ctx->root_dir_len + 1]);
++			log_einfo(mbm_str_dir_created, &parent_dir[root_dir_len + 1]);
+ 			r = 0;
+ 			break;
+ 		default:
+-			log_err(mbm_str_dir_failure, &root_dir[ctx->root_dir_len + 1], strerror(r));
++			log_err(mbm_str_dir_failure, &parent_dir[root_dir_len + 1], strerror(r));
+ 			r = -1;
+ 			break;
+ 	}
+@@ -253,7 +258,7 @@
+  * 	- ctx->rec_len  * ctx->rec_max_count <= ctx->scan_buf_size
+  * If limit > 0 filter no more than specified number of entries, otherwise filter as many as possible
+  */
+-int mbm_scan_dir(mbm_context *ctx, const char *dir, mbm_filter_cb filter, int limit)
++int mbm_scan_dir(mbm_context_t *ctx, const char *dir, mbm_filter_cb filter, int limit)
+ {
+ 	int r;
+ 	DIR *d;
+@@ -327,7 +332,7 @@
+ 	return 0;
+ }
+ 
+-int mbm_save_arc_file(mbm_context *ctx, char *data, size_t len)
++int mbm_save_arc_file(const char *file, char *data, size_t len)
+ {
+ 	/* files are very shot - use non buffered IO */
+ 	int fd;
+@@ -335,7 +340,7 @@
+ 	size_t written = 0;
+ 	ssize_t count;
+ 
+-	fd = open(ctx->work_path, O_CREAT | O_WRONLY, 
++	fd = open(file, O_CREAT | O_WRONLY, 
+ 			S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+ 	if (fd < 0) {
+ 		return -errno;
+diff -Nru a/mbm_fs.h b/mbm_fs.h
+--- a/mbm_fs.h	2012-05-10 17:21:21.000000000 +0300
++++ b/mbm_fs.h	2012-08-04 18:45:24.000000000 +0300
+@@ -9,7 +9,7 @@
+ 	MBM_ARC_TYPE_MON,
+ 
+ 	MBM_ARC_TYPE_COUNT
+-} mbm_arc_type;
++} mbm_arc_type_t;
+ 
+ extern const char *mbm_arc_subdirs[MBM_ARC_TYPE_COUNT];
+ 
+@@ -18,7 +18,7 @@
+  * @return 0 - success, <0 - error
+  * @note For log is not yet started prints errors to stderr in English
+  */
+-extern int mbm_init_root_dir(mbm_context *ctx);
++extern int mbm_init_root_dir(mbm_context_t *ctx);
+ 
+ /** Create path of log directory, 
+  * put the path into work_path with length in work_path_len;
+@@ -27,39 +27,38 @@
+  * @return 0 - success, <0 - error
+  * @note For log is not yet started prints errors to stderr in English
+  */
+-extern int mbm_init_log_fs(mbm_context *ctx);
++extern int mbm_init_log_fs(mbm_context_t *ctx);
+ 
+ /** Create dir structure for arcs: /archive/current|monthly
+  * @param ctx - app context
+  * return 0 - success, <0 - error
+  */
+-extern int mbm_init_arc_fs(mbm_context *ctx);
++extern int mbm_init_arc_fs(mbm_context_t *ctx);
+ 
+ /** Create  subdirectory name and ensure that the directory exists.
+  * Create the subdirectory as need.
+- * @param ctx - context - used for printing relative to root paths into log
+- * @param root_dir - root directory assumed to exist
+- * @param sub_name - sub-directory name 
++ * @param parent_dir - root directory assumed to exist
++ * @param sub_dir - sub-directory name 
++ * @root_dir_len - length of app root dir, used for printing relative to root paths into log
+  * @return 0 - success, <0 - error
+  * @note Used when log is already started, so logs errors
+  */
+-extern int mbm_init_subdir(mbm_context *ctx, char *root_dir, const char *sub_name);
++extern int mbm_init_sub_dir(char *parent_dir, const char *sub_dir, size_t root_dir_len);
+ 
+-typedef int (*mbm_filter_cb)(mbm_context *ctx, const struct dirent *entry);
++typedef int (*mbm_filter_cb)(mbm_context_t *ctx, const struct dirent *entry);
+ 
+ /**
+  * @param filter - callback - returns 1 if given dir entry should be added to the internal buffer of filtered items, 0 - otherwise
+  * @param limit - filter no more entries then specified by limit
+  */
+-extern int mbm_scan_dir(mbm_context *ctx, const char *dir, mbm_filter_cb filter, int limit);
++extern int mbm_scan_dir(mbm_context_t *ctx, const char *dir, mbm_filter_cb filter, int limit);
+ 
+ /** Save data of archive file.
+- * @param ctx - app context - ctx->work_path contains path of the file to be created and the data
+- *                                          to be saved to.
++ * @param file - path of the result file to store the data
+  * @param data - pointer to the data buffer
+  * @param len - length of the data to save
+  * @return 0 - success, <0 - error (check errno)
+  */
+-extern int mbm_save_arc_file(mbm_context *ctx, char *data, size_t len);
++extern int mbm_save_arc_file(const char *file, char *data, size_t len);
+ 
+ #endif /* _MBM_FS_H_ */
+diff -Nru a/mbm_modbus_func.c b/mbm_modbus_func.c
+--- a/mbm_modbus_func.c	2012-05-10 17:21:21.000000000 +0300
++++ b/mbm_modbus_func.c	2012-08-04 18:45:24.000000000 +0300
+@@ -20,13 +20,13 @@
+  *              OK - check exception code
+  *              not OK - error
+  */
+-static int check_confirmation(mbm_context *ctx, uint8_t *req, 
++static int check_confirmation(modbus_t *mb, uint8_t *req, 
+ 							uint8_t *rsp, int rsp_len, int exp_rsp_len)
+ {
+ 	if (rsp_len == exp_rsp_len) {
+ 		int dl, fl, rt;
+ 		/* check function */
+-		if (rsp[1] != req[1]) {
++		if (rsp[1] != req[1]) {			/* MODBUS: function code */
+ 			log_debug("received function not corresponding to request: %d != %d", 
+ 						rsp[1], req[1]);
+ 			errno = EMBBADDATA;
+@@ -34,9 +34,9 @@
+ 		}
+ 
+ 		/* function is OK - check length of data and rsp header  */
+-		dl = rsp[2];
+-		fl = rsp[3];
+-		rt = rsp[4];
++		dl = rsp[2];					/* MODBUS (FC=0x14): Resp. data Length */
++		fl = rsp[3];					/* MODBUS (FC=0x14): Sub-Req. x, File Resp. length */
++		rt = rsp[4];					/* MODBUS (FC=0x14): Sub-Req. x, Reference Type == 6 */
+ 		if ((rt != 6) || 
+ 			(dl != exp_rsp_len - 5) ||
+ 			(fl != exp_rsp_len - 6)) {
+@@ -51,7 +51,7 @@
+ 		return exp_rsp_len - 7;	/* expected number of data bytes */
+ 	} else if ((rsp_len == 5) && 
+ 			(rsp[1] - 0x80 == req[1])) { /* adr(1)+fc_exc(1) + exc(1)+crc(2) */
+-		int exception_code = rsp[2];
++		int exception_code = rsp[2];	/* MODBUS: Exception code */
+ 		if (exception_code < MODBUS_EXCEPTION_MAX) {
+ 			errno = MODBUS_ENOBASE + exception_code;
+ 			log_debug("rsp: exception code: %02X", rsp[2]);
+@@ -69,10 +69,9 @@
+ 	return -1;
+ }
+ 
+-int mbm_modbus_read_file(mbm_context *ctx, mbm_modbus_file *file_data)
++int mbm_modbus_read_file(modbus_t *mb, mbm_modbus_file_t *file_data)
+ {
+ 	int r;
+-	modbus_t *mb = ctx->mb;
+ 	uint8_t raw_req[10];
+ 	int req_len, exp_rsp_len;
+ 	uint8_t rsp[MODBUS_RTU_MAX_ADU_LENGTH];
+@@ -121,7 +120,7 @@
+ 	log_debug_buf("raw response", rsp, req_len);
+ 
+ 	/* check response */
+-	r = check_confirmation(ctx, raw_req, rsp, req_len, exp_rsp_len);
++	r = check_confirmation(mb, raw_req, rsp, req_len, exp_rsp_len);
+ 	if (r < 0) {
+ 		return -1;
+ 	}
+@@ -130,6 +129,7 @@
+ 	* Danfoss-specific: data sould be stored in file in BE format, so
+ 	* do not convert it to LE, just copy instead.
+ 	*/
++	/* MODBUS (FC=0x14): data bytes start at index 5 */
+ #if 0
+ 	{
+ 		int i;
+diff -Nru a/mbm_modbus_func.h b/mbm_modbus_func.h
+--- a/mbm_modbus_func.h	2012-05-10 17:21:21.000000000 +0300
++++ b/mbm_modbus_func.h	2012-08-04 18:45:24.000000000 +0300
+@@ -1,7 +1,12 @@
+ #ifndef _MBM_MODBUS_FUNC_H_
+ #define _MBM_MODBUS_FUNC_H_
+ 
+-#define MBM_MAX_DATA_LEN 252
++#include <modbus/modbus.h>
++
++/* RTU max ADU len: 1 byte addr, PDU: FC(1)+ DL(1)+FL(1)+RT(1)+data, 2 bytes CRC = 7 + data len, so
++* file data length is: max ADU len - 7 
++*/
++#define MBM_MAX_FILE_DATA_LEN			(MODBUS_RTU_MAX_ADU_LENGTH - 7)
+ 
+ /* note (OWEN-speicifc): provide functionality to request 1 record at a time */
+ typedef struct mbm_modbus_file {
+@@ -12,16 +17,16 @@
+ 	uint16_t regs_count;				/* number of regs (2-byte) to read: confirmed by OWEN */
+ 	
+ 	/* output data */
+-	uint8_t data[MBM_MAX_DATA_LEN];	/* response file data */
++	uint8_t data[MBM_MAX_FILE_DATA_LEN];	/* response file data */
+ 	uint8_t data_len;					/* response file data len in bytes */
+-} mbm_modbus_file;
++} mbm_modbus_file_t;
+ 
+ /** Read a record from a file
+ * @param ctx - app context
+ * @param file_data - input: slave device file record info, output: data of file read and its length
+ * return 1 - OK (like libmodbus functions), data read, -1 -error, errno is set by libmodbus
+ */
+-extern int mbm_modbus_read_file(mbm_context *ctx, mbm_modbus_file *file_data);
++extern int mbm_modbus_read_file(modbus_t *mb, mbm_modbus_file_t *file_data);
+ 
+ #endif /* _MBM_MODBUS_FUNC_H_ */
+ 
+diff -Nru a/mbm_strings.c b/mbm_strings.c
+--- a/mbm_strings.c	2012-05-10 17:21:21.000000000 +0300
++++ b/mbm_strings.c	2012-09-13 17:24:47.000000000 +0300
+@@ -3,46 +3,93 @@
+ const char *mbm_str_log_started = "запись в журнал начата";
+ const char *mbm_str_log_stopped = "запись в журнал окончена";
+ 
++const char *mbm_str_app_id = "%s v%s (режим работы приложения: %s)";
++
+ const char *mbm_str_dir_created = "создан новый подкаталог: %s";
+ const char *mbm_str_dir_failure = "ошибка при создании подкаталога: %s: %s";
+ 
++const char *mbm_str_app_mode_running = "рабочая копия приложения в режиме '%s' уже запущена - старт приложения отменён";
++const char *mbm_str_getting_modbus_lock = "получение блокировки шины modbus";
++
++const char *mbm_str_err_fail_lock = "ошибка блокировки файла %s: %s";
++
+ const char *mbm_str_err_arc_path_too_long = "ошибка: слишком длинный путь архива: %d";
+ const char *mbm_str_err_scan_buf_alloc = "ошибка выделения памяти для буфера сканириования каталога (%d байт)";
++const char *mbm_str_err_wl_src_tab_alloc = "ошибка выделения памяти для исходной таблицы белого списка (%d байт)";
++const char *mbm_str_err_wl_tab_alloc = "ошибка выделения памяти для таблицы белого списка (%d байт)";;
+ const char *mbm_str_err_opendir = "ошибка открытия каталога '%s': %s";
+ const char *mbm_str_err_readdir = "ошибка чтения каталога '%s': %s";
+ const char *mbm_str_err_remove = "ошибка при удалении файла '%s': %s";
+ const char *mbm_str_err_fail_init_arc_fs = "ошибка создания архивных каталогов - операции с архивами будут пропущены";
+-const char *mbm_str_err_assign_addrs = "ошибка конфигурации сети - нет подчиненных устройств";
++const char *mbm_str_err_assign_addrs = "ошибка конфигурации сети - ЭСУ не обнаружены";
+ const char *mbm_str_err_libmodbus = "ошибка libmodbus: %s";
+ 
+-const char *mbm_str_warn_set_slave_addr = "ошибка присвоения адреса %d подчиненному устройству (попытка: %d): %s";
++const char *mbm_str_warn_set_slave_addr = "ошибка присвоения адреса %d ЭСУ (попытка: %d): %s";
+ const char *mbm_str_err_set_slave_addr = "ошибка: исчерпаны все попытки присвоить адрес %d";
+-const char *mbm_str_err_slave_addr_verify = "ошибка: адрес подчиненного устройства %d не подтвержден: %s";
+-const char *mbm_str_received_addr_different = "от устройства получено другое значение адреса";
+-const char *mbm_str_err_slave_info = "ошибка чтения информации подчиненного устройства по адресу %d: %s";
+-const char *mbm_str_err_sync_time = "ошибка синхронизации времени для устройства %s (адрес %d): %s";
++const char *mbm_str_err_slave_addr_verify = "ошибка: адрес ЭСУ %d не подтвержден: %s";
++const char *mbm_str_received_addr_different = "получено другое значение адреса";
++const char *mbm_str_err_slave_info = "ошибка чтения информации ЭСУ %s (адрес %d): %s";
++const char *mbm_str_err_sync_time = "ошибка синхронизации времени для ЭСУ %s (адрес %d): %s";
+ const char *mbm_str_err_sys_time = "системная ошибка при получении времени: %s";
+-const char *mbm_str_err_fetch_arc_header = "ошибка получения заголовка архива: устройство: %s (адрес %d), канал: %d, месяц: %d: %s";
+-const char *mbm_str_err_fetch_arc = "ошибка получения архива: устройство: %s (адрес %d), канал: %d, месяц: %d: %s";
+-const char *mbm_str_err_save_arc = "ошибка сохранения архива: устройство: %s (адрес %d), канал: %d, месяц: %d: %s";
+-const char *mbm_str_err_fetch_arcs = "ошибка получения архивов: устройство: %s (адрес %d): %s";
++const char *mbm_str_err_fetch_arc_header = "ошибка получения заголовка архива ЭСУ %s (адрес %d), канал: %d, месяц: %d: %s";
++const char *mbm_str_err_fetch_arc = "ошибка получения архива ЭСУ %s (адрес %d), канал: %d, месяц: %d: %s";
++const char *mbm_str_err_save_arc = "ошибка сохранения архива ЭСУ %s (адрес %d), канал: %d, месяц: %d: %s";
++const char *mbm_str_err_fetch_arcs = "ошибка получения архивов ЭСУ %s (адрес %d): %s";
++
++const char *mbm_str_err_wl_clean = "ошибка очистки белого списка ЭСУ %s (адрес %d): %s";
++const char *mbm_str_err_wl_source_table = "ошибка формирования исходной таблицы для белого списка, ЭСУ %s (адрес %d): %s";
++const char *mbm_str_err_wl_file = "ошибка создания файла белого списка %s: %s";
++const char *mbm_str_err_wl_path_too_long = "ошибка: слишком длинный путь белого списка: %d";
++const char *mbm_str_err_wl_file_read = "ошибка чтения файла белого списка %s: %s";
++const char *mbm_str_err_wl_set = "ошибка установки белого списка ЭСУ %s (адрес %d): %s";
++const char *mbm_str_err_move_wl_set = "ошибка перемещения файла белого списка %s -> %s: %s";
+ 
+-const char *mbm_str_slave_found = "подчиненное устройство по адресу %d: Name='%s', SN=%s, Status=0x%04X (датчиков: %d, FLASH: %s, RADIO: %s, OP2: %s, OP1: %s)";
+-const char *mbm_str_slave_addrs_assigned = "сеть сконфигурирована: адреса подчиненных устройств: %d - %d (успешно проверено адресов: %d)";
++const char *mbm_str_slave_found = "ЭСУ по адресу %d: %s, %s, %s, состояние=0x%04X (количество СУ: %d, flash память: %s, радио модуль: %s, сохранение 18-мес. архивов: %sвыполняется, удаление архивов: %sвыполняется)";
++const char *mbm_str_slave_addrs_assigned = "сеть сконфигурирована: адреса ЭСУ: %d - %d (успешно проверено адресов: %d)";
+ 
+ const char *mbm_str_old_removed = "устаревший файл '%s' удален";
+ const char *mbm_str_old_arcdir_removed = "устаревший каталог '%s' удален";
+ 
+ const char *mbm_str_fetch_archives_started = "получение архивов начато";
+-const char *mbm_str_arc_fetched = "получен архив с устройства %s: канал: %d, месяц: %d => %s";
+-const char *mbm_str_fetch_archives_stopped = "получение архивов закончено (получено архивов: %d)";
++const char *mbm_str_arc_fetched = "получен архив с ЭСУ %s: канал: %d, месяц: %d => %s";
++const char *mbm_str_fetch_archives_done = "получение архивов закончено (получено архивов: %d)";
+ 
+ const char *mbm_str_sync_time_started = "синхронизация времени начата";
+-const char *mbm_str_slave_time_synced = "время синхронизировано для подчиненного устройства %s";
+-const char *mbm_str_sync_time_stopped = "синхронизация времени окончена (синхронизировано устройств: %d)";
++const char *mbm_str_slave_time_synced = "время синхронизировано для ЭСУ %s";
++const char *mbm_str_sync_time_done = "синхронизация времени окончена (синхронизировано ЭСУ: %d)";
+ 
+ const char *mbm_str_clean_log_started = "удаление устаревших журналов начато";
+ const char *mbm_str_clean_log_done = "удаление устаревших журналов окончено";
+ const char *mbm_str_clean_arc_started = "удаление устаревших архивов начато";
+ const char *mbm_str_clean_arc_done = "удаление устаревших архивов окончено";
+ 
++const char *mbm_str_clean_wl_started = "очистка белых списков на ЭСУ начата";
++const char *mbm_str_slave_wl_cleaned = "белый список очищен на ЭСУ %s";
++const char *mbm_str_clean_wl_done = "очистка белых списков выполнена (успешно обработанных ЭСУ: %d)";
++
++const char *mbm_str_make_wl_started = "формирование белого списка начато";
++const char *mbm_str_wl_source_table_done = "формирование исходной таблицы для белого списка выполнено (записей: %d)";
++const char *mbm_str_make_wl_wait = "ожидание формирования белых списков на ЭСУ, длительность(чч:мм): %02d:%02d";
++const char *mbm_str_make_wl_continue = "продолжение формирования белого списка";
++const char *mbm_str_wl_source_table_sorted = "исходная таблица для белого списка отсортирована";
++const char *mbm_str_wl_produced = "белый список рассчитан (записей: %d)";
++const char *mbm_str_wl_file_saved = "белый список сохранен: %s";
++const char *mbm_str_make_wl_done = "формирование белого списка закончено";
++
++const char *mbm_str_set_wl_started = "установка белого списка начата";
++const char *mbm_str_wl_table_sorted = "талица белого списка отсортирована";
++const char *mbm_str_wl_no_records_for_slave = "записи белого списка для ЭСУ %s не найдены";
++const char *mbm_str_wl_found_records_for_slave = "надено записей белого списка для ЭСУ %s: %d";
++const char *mbm_str_slave_wl_set = "белый лист установлен на ЭСУ %s";
++const char *mbm_str_set_wl_done = "установка белого списка закончена (успешно обработанных ЭСУ: %d, записей: %d)";
++const char *mbm_str_set_wl_empty_done = "установка белого списка закончена (установка пропущена - список пуст)";
++const char *mbm_str_move_wl_set = "файл белого списка перемещен в %s";
++
++const char *mbm_str_nosp = "не ";
++const char *mbm_str_error = "ошибка";
++
++const char *mbm_str_am_fetch_arcs = "получение архивов";
++const char *mbm_str_am_make_wl = "создание белого списка";
++const char *mbm_str_am_set_wl = "установка белого списка";
++const char *mbm_str_am_sync_time = "синхронизация времени СУ";
++
+diff -Nru a/mbm_strings.h b/mbm_strings.h
+--- a/mbm_strings.h	2012-05-10 17:21:21.000000000 +0300
++++ b/mbm_strings.h	2012-09-13 17:24:47.000000000 +0300
+@@ -4,11 +4,20 @@
+ const char *mbm_str_log_started;
+ const char *mbm_str_log_stopped;
+ 
++const char *mbm_str_app_id;
++
+ const char *mbm_str_dir_created;
+ const char *mbm_str_dir_failure;
+ 
++const char *mbm_str_app_mode_running;
++const char *mbm_str_getting_modbus_lock;
++
++const char *mbm_str_err_fail_lock;
++
+ const char *mbm_str_err_arc_path_too_long;
+ const char *mbm_str_err_scan_buf_alloc;
++const char *mbm_str_err_wl_src_tab_alloc;
++const char *mbm_str_err_wl_tab_alloc;
+ const char *mbm_str_err_opendir;
+ const char *mbm_str_err_readdir;
+ const char *mbm_str_err_remove;
+@@ -28,6 +37,14 @@
+ const char *mbm_str_err_save_arc;
+ const char *mbm_str_err_fetch_arcs;
+ 
++const char *mbm_str_err_wl_clean;
++const char *mbm_str_err_wl_source_table;
++const char *mbm_str_err_wl_file;
++const char *mbm_str_err_wl_path_too_long;
++const char *mbm_str_err_wl_file_read;
++const char *mbm_str_err_wl_set;
++const char *mbm_str_err_move_wl_set;
++	
+ const char *mbm_str_slave_found;
+ const char *mbm_str_slave_addrs_assigned;
+ 	
+@@ -36,16 +53,46 @@
+ 
+ const char *mbm_str_fetch_archives_started;
+ const char *mbm_str_arc_fetched;
+-const char *mbm_str_fetch_archives_stopped;
++const char *mbm_str_fetch_archives_done;
+ 
+ const char *mbm_str_sync_time_started;
+ const char *mbm_str_slave_time_synced;
+-const char *mbm_str_sync_time_stopped;
++const char *mbm_str_sync_time_done;
+ 
+ const char *mbm_str_clean_log_started;
+ const char *mbm_str_clean_log_done;
+ const char *mbm_str_clean_arc_started;
+ const char *mbm_str_clean_arc_done;
+ 
++const char *mbm_str_clean_wl_started;
++const char *mbm_str_slave_wl_cleaned;
++const char *mbm_str_clean_wl_done;
++
++const char *mbm_str_make_wl_started;
++const char *mbm_str_wl_source_table_done;
++const char *mbm_str_make_wl_wait;
++const char *mbm_str_make_wl_continue;
++const char *mbm_str_wl_source_table_sorted;
++const char *mbm_str_wl_produced;
++const char *mbm_str_wl_file_saved;
++const char *mbm_str_make_wl_done;
++
++const char *mbm_str_set_wl_started;
++const char *mbm_str_wl_table_sorted;
++const char *mbm_str_wl_no_records_for_slave;
++const char *mbm_str_wl_found_records_for_slave;
++const char *mbm_str_slave_wl_set;
++const char *mbm_str_set_wl_done;
++const char *mbm_str_set_wl_empty_done;
++const char *mbm_str_move_wl_set;
++
++const char *mbm_str_nosp;
++const char *mbm_str_error;
++
++const char *mbm_str_am_fetch_arcs;
++const char *mbm_str_am_make_wl;
++const char *mbm_str_am_set_wl;
++const char *mbm_str_am_sync_time;
++	
+ #endif /* _MBM_STRINGS_H_ */
+ 
+diff -Nru a/mbm_task_clean_fs.c b/mbm_task_clean_fs.c
+--- a/mbm_task_clean_fs.c	2012-05-10 17:21:21.000000000 +0300
++++ b/mbm_task_clean_fs.c	2012-08-14 18:57:49.000000000 +0300
+@@ -1,5 +1,5 @@
+-#define _XOPEN_SOURCE /* glibc2 needs this */
+ #include <time.h>
++extern char *strptime(const char *s, const char *format, struct tm *tm);
+ 
+ #include <unistd.h>
+ #include <errno.h>
+@@ -12,7 +12,7 @@
+ 
+ #include "mbm_task_clean_fs.h"
+ 
+-static int old_file_filter(mbm_context *ctx, const struct dirent *entry, size_t dt_offset)
++static int old_file_filter(mbm_context_t *ctx, const struct dirent *entry, size_t dt_offset)
+ {
+ 	char *p;
+ 	struct tm item_tm;
+@@ -47,7 +47,7 @@
+ 	return 0;
+ }
+ 
+-static int old_log_filter(mbm_context *ctx, const struct dirent *entry)
++static int old_log_filter(mbm_context_t *ctx, const struct dirent *entry)
+ {
+ 	if (!strcmp(entry->d_name, ctx->log_file_name)) {
+ 		log_debug("item: '%s' - current log - ignored", entry->d_name);
+@@ -57,7 +57,7 @@
+ 	return old_file_filter(ctx, entry, 0);
+ }
+ 
+-static int old_arc_filter(mbm_context *ctx, const struct dirent *entry)
++static int old_arc_filter(mbm_context_t *ctx, const struct dirent *entry)
+ {
+ 	return old_file_filter(ctx, entry, 9);	/* XXXXXXXX- = 9 */
+ }
+@@ -67,7 +67,7 @@
+  *  - for arc dirs - verification of the length should be done before calling this function
+  * dir is modified to build every file item, than dir is restored to its original value
+  */
+-static int remove_filtered_files(mbm_context *ctx, char *dir, size_t dir_len)
++static int remove_filtered_files(mbm_context_t *ctx, char *dir, size_t dir_len)
+ {
+ 	int i;
+ 	char *p = ctx->scan_buf;
+@@ -90,7 +90,7 @@
+ 			log_err(mbm_str_err_remove, &dir[ctx->root_dir_len + 1], strerror(errno));
+ 			rc = -1;
+ 		} else {
+-			log_info(mbm_str_old_removed, &dir[ctx->root_dir_len + 1]);
++			log_einfo(mbm_str_old_removed, &dir[ctx->root_dir_len + 1]);
+ 		}
+ 
+ 		len = strlen(p);
+@@ -104,7 +104,7 @@
+ 	return rc;
+ }
+ 
+-static void set_cleanup_filter_time(mbm_context *ctx, int months_ago)
++static void set_cleanup_filter_time(mbm_context_t *ctx, int months_ago)
+ {
+ 	struct tm min_tm;
+ 
+@@ -137,7 +137,7 @@
+ }
+ 
+ /* use work_path as directory and given subdir name as subdirectory */
+-static void clean_archives_in_subdir(mbm_context *ctx)
++static void clean_archives_in_subdir(mbm_context_t *ctx)
+ {
+ 	int r;
+ 
+@@ -156,7 +156,7 @@
+ 	/* try removing the counter dir - if it's empty it will be removed */
+ 	r = rmdir(ctx->work_path);
+ 	if (!r) {
+-		log_info(mbm_str_old_arcdir_removed, &ctx->work_path[ctx->root_dir_len]);
++		log_einfo(mbm_str_old_arcdir_removed, &ctx->work_path[ctx->root_dir_len]);
+ 	} else {
+ 		log_debug("failed to remove counter arc directory '%s': %s (not empty - is not error)",
+ 			ctx->work_path, strerror(errno));
+@@ -168,7 +168,7 @@
+ /* NOTE: all paths' lengths are verified in mbm_init_arc_fs(), so
+  * this function skips these verifications
+  */
+-int mbm_clean_archives(mbm_context *ctx)
++int mbm_clean_archives(mbm_context_t *ctx)
+ {
+ 	int i;
+ 	int r;
+@@ -250,7 +250,7 @@
+ 	return 0;
+ }
+ 
+-int mbm_clean_logs(mbm_context *ctx)
++int mbm_clean_logs(mbm_context_t *ctx)
+ {
+ 	int r;
+ 
+@@ -273,7 +273,7 @@
+ 	strcat(ctx->work_path, "/");
+ 	strcat(ctx->work_path, SUBDIR_SERVICE);
+ 	strcat(ctx->work_path, "/");
+-	strcat(ctx->work_path, SUBDIR_SERVICE_LOG);
++	strcat(ctx->work_path, ctx->log_sub_dir);
+ 	ctx->work_path_len = strlen(ctx->work_path);
+ 
+ 	do {
+diff -Nru a/mbm_task_clean_fs.h b/mbm_task_clean_fs.h
+--- a/mbm_task_clean_fs.h	2012-05-10 17:21:21.000000000 +0300
++++ b/mbm_task_clean_fs.h	2012-08-04 18:45:24.000000000 +0300
+@@ -1,8 +1,8 @@
+ #ifndef _MBM_TASK_CLEAN_FS_H_
+ #define _MBM_TASK_CLEAN_FS_H_
+ 
+-extern int mbm_clean_archives(mbm_context *ctx);
+-extern int mbm_clean_logs(mbm_context *ctx);
++extern int mbm_clean_archives(mbm_context_t *ctx);
++extern int mbm_clean_logs(mbm_context_t *ctx);
+ 
+ #endif /* _MBM_TASK_CLEAN_FS_H_ */
+ 
+diff -Nru a/mbm_task_modbus.c b/mbm_task_modbus.c
+--- a/mbm_task_modbus.c	2012-05-10 17:21:21.000000000 +0300
++++ b/mbm_task_modbus.c	2012-09-13 17:24:47.000000000 +0300
+@@ -1,12 +1,14 @@
+-#define _XOPEN_SOURCE /* glibc2 needs this */
+ #include <time.h>
++extern char *strptime(const char *s, const char *format, struct tm *tm);
+ 
++#include <sys/types.h>
++#include <sys/stat.h>
+ #include <errno.h>
+ #include <string.h>
+ #include <unistd.h>
++#include <stdlib.h>
++#include <stdio.h>
+ 
+-int usleep(useconds_t usec); /*TODO: _XOPEN_SOURCE makes the declaration unavailable?? */
+- 
+ #include "mb_master.h"
+ #include "mbm_strings.h"
+ #include "app_log.h"
+@@ -15,11 +17,26 @@
+ 
+ #include "mbm_task_modbus.h"
+ 
++#ifdef DEBUG
++/* white list source table is saved to the file in debug version of the app */
++#define MBM_WL_SOURCE_TABLE_FILE "/tmp/wl_source_table.csv"
++#define MBM_WL_SOURCE_TABLES_FILE "/tmp/wl_source_table_sorted.csv"
++#endif
++
++typedef struct arc_descriptor {
++	int channel;
++	int mon_shift;
++	int file_no;			/* No. of the file: calculated */
++	int header_reg;		/* Base reg of the header of the file: calculated */
++} arc_descriptor_t;
++
+ typedef struct arc_header {
+-	uint16_t arc_id[2];
+-	uint16_t arc_time[6];
+-	uint16_t arc_size[1];
+-} arc_header;
++	uint16_t raw[MBM_ARC_HEADER_REG_COUNT];
++	uint32_t arc_id;
++	struct tm telegram_time;
++	uint8_t telegram_size;
++	char arc_id_str[8 + 1];	/* converted to string arc_id */
++} arc_header_t;
+ 
+ /* str size is >= 9: 8 decimal digits + terminating 0 
+ * NOTE: id in normal encoding LE, so in the memory low byte is first
+@@ -27,8 +44,20 @@
+ */
+ static void devsn_to_str(uint32_t id, char *str)
+ {
+-	sprintf(str, "%02d", (id >> 24));
+-	sprintf(str + 2, "%06d", (id & 0xffffff));
++	snprintf(str, 2 + 1, "%02d", (id >> 24));			/* 2 chars + 1 for terminating zero */
++	snprintf(str + 2, 6 + 1, "%06d", (id & 0xffffff));	/* 6 chars + 1 for terminating zero */
++}
++static uint32_t str_to_devsn(const char *str)
++{
++	int n;
++	uint32_t hi, lo;
++	n = sscanf(str, "%02d%06d", &hi, &lo);
++	if (n == 2) {
++		return (hi << 24) | (lo & 0xffffff);
++	}
++	//TODO:
++	log_err("%s: failed for %s", __func__, str);
++	return 0xffffffff;
+ }
+ static void arcid_to_str(uint32_t id, char *str)
+ {
+@@ -40,8 +69,29 @@
+ 		sprintf(&str[i * 2], "%02X", b);
+ 	}
+ }
++static uint32_t str_to_arcid(const char *str)
++{
++	int n;
++	uint32_t id = 0, b[4];
++	n = sscanf(str, "%02X%02X%02X%02X", &b[0], &b[1], &b[2], &b[3]);
++	if (n == 4) {
++		while (1) {
++			n--;
++			id |= (b[n] & 0xff);
++			if (!n) {
++				break;
++			}
++			id <<= 8;
++		}
++		return id;
++	}
++	//TODO:
++	log_err("%s: failed for %s", __func__, str);
++	return 0xffffffff;
++}
+ 
+-static int assign_slave_addrs(mbm_context *ctx)
++/* note: assumes that slaves info in ctx is initialized to 0 */
++static int assign_slave_addrs(mbm_context_t *ctx)
+ {
+ 	int r;
+ 	int attempts;
+@@ -107,6 +157,7 @@
+ 	for (addr = MBM_SLAVE_ADDR_MIN; addr <= ctx->mb_max_addr; addr++) {
+ 		int i;
+ 		uint16_t a;
++		int saved_errno = 0;
+ 		
+ 		/* set slave addr: = current */
+ 		r = modbus_set_slave(ctx->mb, addr);
+@@ -117,6 +168,7 @@
+ 
+ 		for (i = 0; i < MBM_VERIFY_SLAVE_ADDR_COUNT; i++) {
+ 			r = modbus_read_registers(ctx->mb, MBM_SET_ADDR_REG, 1, &a);
++			saved_errno = errno;
+ 			log_debug("addr %d verification %d: rc=%d, val=%u", addr, i, r, a);
+ 			if (r < 0 || a != addr) {
+ 				break;
+@@ -125,7 +177,7 @@
+ 
+ 		if (r < 0 || a != addr) {
+ 			log_err(mbm_str_err_slave_addr_verify, addr, 
+-				r < 0 ? modbus_strerror(errno) : mbm_str_received_addr_different);
++				r < 0 ? modbus_strerror(saved_errno) : mbm_str_received_addr_different);
+ 			continue;
+ 		}
+ 
+@@ -141,110 +193,129 @@
+ 	return ctx->mb_slaves_count > 0 ? 0 : -1;
+ }
+ 
+-static void update_slave_status(mbm_context *ctx, int addr, uint16_t status)
++static void update_slave_status(mbm_slave_dev_t *slave, uint16_t status)
+ {
+-	ctx->mb_slave[addr].status = status;
++	slave->status = status;
+ 
+-	ctx->mb_slave[addr].sensor_count = status >> MBM_ST_OFF_SENSOR_COUNT; 
+-	ctx->mb_slave[addr].flags.fail_flash = (status >> MBM_ST_OFF_FLASH) & 1;
+-	ctx->mb_slave[addr].flags.fail_radio = (status >> MBM_ST_OFF_RADIO) & 1;
+-	ctx->mb_slave[addr].flags.no_arc = (status >> MBM_ST_OFF_NO_ARC) & 1;
+-	ctx->mb_slave[addr].flags.no_mon_arc = (status >> MBM_ST_OFF_NO_MON_ARC) & 1;
++	slave->sensor_count = status >> MBM_ST_OFF_SENSOR_COUNT; 
++	slave->flags.fail_flash = (status >> MBM_ST_OFF_FLASH) & 1;
++	slave->flags.fail_radio = (status >> MBM_ST_OFF_RADIO) & 1;
++	slave->flags.no_arc = (status >> MBM_ST_OFF_NO_ARC) & 1;
++	slave->flags.no_mon_arc = (status >> MBM_ST_OFF_NO_MON_ARC) & 1;
+ }
+ 
+-static void fetch_slaves_info(mbm_context *ctx)
++/* return bool continue or break the loop: 1 - continue, 0 - break */
++typedef int (*process_slave_cb)(mbm_context_t *ctx, mbm_slave_dev_t *slave, void *data);
++/* data - optional specific data */
++static void foreach_active_slave(mbm_context_t *ctx, process_slave_cb process, 
++								const char *err_msg, void *data)
+ {
+ 	int addr;
++	int r;
+ 
+-	/* read slaves' info */
+ 	for (addr = MBM_SLAVE_ADDR_MIN; addr <= ctx->mb_max_addr; addr++) {
+-		uint16_t info[MBM_INFO_REG_COUNT];	/* name, SN, status */
+-		int r, i;
++		mbm_slave_dev_t *slave = &ctx->mb_slave[addr];
++
++		slave->addr = addr;	/* ensure correct slave's addr value */
+ 
+-		if (!ctx->mb_slave[addr].flags.addr_check_passed) {
++		if (!slave->flags.addr_check_passed) {
++			log_debug("skip addr %d (check not passed)", addr);
+ 			continue;
+ 		}
+ 
+-		/* read the slave's info */
+-
+-		/* set slave addr: = current */
+ 		r = modbus_set_slave(ctx->mb, addr);
+ 		if (r < 0) {
+-			log_err(mbm_str_err_libmodbus, modbus_strerror(errno));
+-		} else {
+-//uncomment to see exact exchange when getting DevSN
+-//modbus_set_debug(ctx->mb, 1);
+-			r = modbus_read_registers(ctx->mb, MBM_INFO_REG, 
+-									MBM_INFO_REG_COUNT, info);
+-//modbus_set_debug(ctx->mb, 0);
+-			if (r < 0) {
+-				log_err(mbm_str_err_slave_info, addr, modbus_strerror(errno));
+-			}
++			log_err(err_msg, slave->dev_sn_str, addr, modbus_strerror(errno));
++			continue;	/* not fatal: try another device */
+ 		}
+ 
+-		if (r < 0) {
+-			/* should not happen, but if happen - mark the slave */
+-			sprintf(ctx->mb_slave[addr].dev_name, "Unk%03d", addr);
+-		} else {
+-			int j = 0;
+-			for (i = MBM_INFO_IDX_NAME; i < MBM_INFO_IDX_NAME + 3; i++) {
+-				ctx->mb_slave[addr].dev_name[j++] = MODBUS_GET_HIGH_BYTE(info[i]);
+-				ctx->mb_slave[addr].dev_name[j++] = MODBUS_GET_LOW_BYTE(info[i]);
+-			}
+-			/* MODBUS_GET_INT32_FROM_INT16: low register becomes high word in the result dword */
+-			ctx->mb_slave[addr].dev_sn = MODBUS_GET_INT32_FROM_INT16(info, 
+-														MBM_INFO_IDX_SN);
+-			update_slave_status(ctx, addr, info[MBM_INFO_IDX_STATUS]);
++		r = process(ctx, slave, data);
++		if (!r) {
++			break;
+ 		}
+-
+-		devsn_to_str(ctx->mb_slave[addr].dev_sn, ctx->mb_slave[addr].dev_sn_str);
+-		log_info(mbm_str_slave_found, addr, ctx->mb_slave[addr].dev_name, 
+-				ctx->mb_slave[addr].dev_sn_str, ctx->mb_slave[addr].status,
+-				ctx->mb_slave[addr].sensor_count, 
+-				ctx->mb_slave[addr].flags.fail_flash ? "FAIL" : "OK",
+-				ctx->mb_slave[addr].flags.fail_radio ? "FAIL" : "OK",
+-				ctx->mb_slave[addr].flags.no_arc ? "YES" : "NO",
+-				ctx->mb_slave[addr].flags.no_mon_arc ? "YES" : "NO");
+ 	}
+ }
+ 
+-#if 0
+-static int fetch_slave_status(mbm_context *ctx, int addr)
++static int forslave_get_info(mbm_context_t *ctx, mbm_slave_dev_t *slave, void *data)
+ {
+-	int r;
+-	uint16_t status;
++	uint16_t info[MBM_INFO_REG_COUNT];	/* name, SN, status */
++	uint8_t slave_id[MODBUS_RTU_MAX_ADU_LENGTH - 4];	/* 1(addr) + 1(fc) + 2 (rc) */
++	int r, i, j;
+ 
+-	r = modbus_read_registers(ctx->mb, MBM_INFO_REG + MBM_INFO_IDX_STATUS, 
+-							1, &status);
++//uncomment to see exact exchange when getting DevSN
++//modbus_set_debug(ctx->mb, 1);
++	r = modbus_read_registers(ctx->mb, MBM_INFO_REG, MBM_INFO_REG_COUNT, info);
++//modbus_set_debug(ctx->mb, 0);
+ 	if (r < 0) {
+-		log_err(mbm_str_err_slave_info, addr, modbus_strerror(errno));
+-		return -1;
++		/* sn str now is empty */
++		log_err(mbm_str_err_slave_info, slave->dev_sn_str, slave->addr, 
++				modbus_strerror(errno));
++		/* should not happen, but if happen - mark the slave */
++		sprintf(slave->dev_name, "Unk%03d", slave->addr);
++		return 1; /* continue */
++	}
++
++	for (i = MBM_INFO_IDX_NAME, j = 0; i < MBM_INFO_IDX_NAME + 3; i++) {
++		slave->dev_name[j++] = MODBUS_GET_HIGH_BYTE(info[i]);
++		slave->dev_name[j++] = MODBUS_GET_LOW_BYTE(info[i]);
++	}
++	/* MODBUS_GET_INT32_FROM_INT16: low register becomes high word in the result dword */
++	slave->dev_sn = MODBUS_GET_INT32_FROM_INT16(info, MBM_INFO_IDX_SN);
++	update_slave_status(slave, info[MBM_INFO_IDX_STATUS]);
++
++	devsn_to_str(slave->dev_sn, slave->dev_sn_str);
++
++	r = modbus_report_slave_id(ctx->mb, slave_id);
++	if (r > 1) {
++		char *start, *end;
++		size_t len;
++		start = strchr((const char *)&slave_id[1], ' ');
++		if (start) {
++			start++;
++			end = strchr(start, ' ');
++			if (end) {
++				len = end - start;
++				if (len > MBM_MAX_SLAVE_VER_LEN) {
++					len = MBM_MAX_SLAVE_VER_LEN;
++				}
++
++				if (len) {
++					memcpy(slave->fw_ver, start, len);
++					slave->fw_ver[len] = 0;
++				}
++			}
++		}
+ 	}
++	if (!slave->fw_ver[0]) {
++		strcpy(slave->fw_ver, "unk");
++	}
++	
++	log_info(mbm_str_slave_found, slave->addr, slave->dev_sn_str,
++			slave->dev_name, slave->fw_ver,
++			slave->status, slave->sensor_count, 
++			slave->flags.fail_flash ? mbm_str_error : "OK",
++			slave->flags.fail_radio ? mbm_str_error : "OK",
++			slave->flags.no_mon_arc ? "" : mbm_str_nosp,
++			slave->flags.no_arc ? "" : mbm_str_nosp);
++	return 1;
++}
+ 
+-	update_slave_status(ctx, addr, status);
+-	log_debug("fetched slave status: addr=%d, SN=%s, status=0x%04X "
+-		"(sensors: %d, flash: %s, radio: %s, op2: %s, op1: %s)", 
+-			addr, ctx->mb_slave[addr].dev_sn_str, 
+-			ctx->mb_slave[addr].status,
+-			ctx->mb_slave[addr].sensor_count, 
+-			ctx->mb_slave[addr].flags.fail_flash ? "FAIL" : "OK",
+-			ctx->mb_slave[addr].flags.fail_radio ? "FAIL" : "OK",
+-			ctx->mb_slave[addr].flags.no_arc ? "YES" : "NO",
+-			ctx->mb_slave[addr].flags.no_mon_arc ? "YES" : "NO");
+-	return 0;
++/* note: assumes that slaves info in ctx is initialized to 0 */
++static void fetch_slaves_info(mbm_context_t *ctx)
++{
++	foreach_active_slave(ctx, &forslave_get_info, mbm_str_err_slave_info, NULL);
+ }
+-#endif
+ 
+-int mbm_modbus_init(mbm_context *ctx)
++int mbm_modbus_init(mbm_context_t *ctx)
+ {
+ 	int r;
+-	mbm_config *cfg;
++	mbm_config_t *cfg;
+ 
+ 	cfg = &ctx->cfg;
+ 
+ 	/* Modbus ops */
+-	ctx->mb = modbus_new_rtu(cfg->tty_dev, cfg->baud_rate, 
+-								cfg->parity, cfg->data_bits, cfg->stop_bits);
++	ctx->mb = modbus_new_rtu(cfg->port.tty_dev, cfg->port.baud_rate, cfg->port.parity, 
++								cfg->port.data_bits, cfg->port.stop_bits);
+ 	if (!ctx->mb) {
+ 		log_err(mbm_str_err_libmodbus, modbus_strerror(errno));
+ 		goto err_new;
+@@ -310,19 +381,23 @@
+ 	modbus_close(ctx->mb);
+ err_conn:
+ 	modbus_free(ctx->mb);
++	ctx->mb = NULL;
+ err_new:
+ 	return -1;
+ }
+ 
+-void mbm_modbus_done(mbm_context *ctx)
++void mbm_modbus_done(mbm_context_t *ctx)
+ {
+-	modbus_close(ctx->mb);
+-	log_debug("modbus connection closed");
+-	modbus_free(ctx->mb);
+-	log_debug("modbus context freed");
++	if (ctx->mb) {
++		modbus_close(ctx->mb);
++		log_debug("modbus connection closed");
++		modbus_free(ctx->mb);
++		log_debug("modbus context freed");
++		ctx->mb = NULL;
++	}
+ }
+ 
+-static int same_arc_filter(mbm_context *ctx, const struct dirent *entry)
++static int same_arc_filter(mbm_context_t *ctx, const struct dirent *entry)
+ {
+ 	char *p;
+ 	struct tm item_tm;
+@@ -372,46 +447,44 @@
+ 	return 0;
+ }
+ 
+-/* Assume: work_path is set to /root/arcs/arc-type", work_path_len is set properly too
+- * returns count of fetched archives: 1 or 0
+- * channel & mon_shift are used for logging only, mon_shift < 0 means that it should not be logged
+- */
+-static int fetch_channel_archive(mbm_context *ctx, int addr, int channel, int mon_shift,
+-								int arc_header_reg, int file_no)
++/* read & parse arc header */
++static int read_slave_arc_header(mbm_context_t *ctx, mbm_slave_dev_t *slave,
++							arc_descriptor_t *arc, arc_header_t *arc_head)
+ {
+-	int count = 0;	
+-	uint16_t arc_header[MBM_ARC_HEADER_REG_COUNT];
+-	uint32_t arc_id;
+-	struct tm filter_tm;
+-	time_t arc_expiration_time;
+ 	int r;
+-	char arc_time_str[MBM_DATETIME_LEN + 1];
+-
+-	r = modbus_read_registers(ctx->mb, arc_header_reg, 
+-			MBM_ARC_HEADER_REG_COUNT, arc_header);
++	
++	r = modbus_read_registers(ctx->mb, arc->header_reg, 
++							MBM_ARC_HEADER_REG_COUNT, arc_head->raw);
+ 	if (r < 0) {
+-		log_err(mbm_str_err_fetch_arc_header, ctx->mb_slave[addr].dev_sn_str, addr, 
+-					channel, mon_shift, modbus_strerror(errno));
+-		return 0;	/* no file fetched */
++		log_err(mbm_str_err_fetch_arc_header, slave->dev_sn_str, slave->addr, 
++					arc->channel, arc->mon_shift, modbus_strerror(errno));
++		return -1;
++	}
++
++	/* parse header */
++	arc_head->telegram_size = arc_head->raw[MBM_ARC_IDX_SIZE];
++	if (arc_head->telegram_size == 0xff) {
++		log_debug("do not parse header more: size=0xFF");
++		return -1; /* no arc data, channel is not used, TODO: check size for matching to correct ADU? */
+ 	}
+ 
+ 	/*
+ 	* MODBUS_GET_INT32_FROM_INT16: low register becomes high word in the result dword
+ 	*/
+-	arc_id = MODBUS_GET_INT32_FROM_INT16(arc_header, MBM_ARC_IDX_ID);
+-	arcid_to_str(arc_id, ctx->id_str);
+-	
++	arc_head->arc_id = MODBUS_GET_INT32_FROM_INT16(arc_head->raw, MBM_ARC_IDX_ID);
++	arcid_to_str(arc_head->arc_id, arc_head->arc_id_str);
++
+ 	log_debug("arc header: dev %s (addr=%d), channel=%d, mon=%d: "
+ 		"arc_id=%s, %04u-%02u-%02u %02u:%02u:%02u, size=%u BYTES",
+-		ctx->mb_slave[addr].dev_sn_str, addr, channel, mon_shift,
+-		ctx->id_str, 
+-		arc_header[MBM_ARC_IDX_TIME + 5], arc_header[MBM_ARC_IDX_TIME + 4], 
+-		arc_header[MBM_ARC_IDX_TIME + 3],
+-		arc_header[MBM_ARC_IDX_TIME + 2], arc_header[MBM_ARC_IDX_TIME + 1],
+-		arc_header[MBM_ARC_IDX_TIME],
+-		arc_header[MBM_ARC_IDX_SIZE]);
++		slave->dev_sn_str, slave->addr, arc->channel, arc->mon_shift,
++		arc_head->arc_id_str, 
++		arc_head->raw[MBM_ARC_IDX_TIME + 5], arc_head->raw[MBM_ARC_IDX_TIME + 4], 
++		arc_head->raw[MBM_ARC_IDX_TIME + 3],
++		arc_head->raw[MBM_ARC_IDX_TIME + 2], arc_head->raw[MBM_ARC_IDX_TIME + 1],
++		arc_head->raw[MBM_ARC_IDX_TIME],
++		arc_head->raw[MBM_ARC_IDX_SIZE]);
+ 
+-	/* prepare filter time. Arc's time format is:
++	/* Arc's time format is:
+ 	 * sec 0..59
+ 	 * min 0..59
+ 	 * hour 0..23
+@@ -419,14 +492,116 @@
+ 	 * mon 1.12
+ 	 * year 2010..2100 
+ 	 */
+-	memset(&filter_tm, 0, sizeof(filter_tm));
+-	filter_tm.tm_isdst = ctx->start_tm.tm_isdst;	/* the same is_dst as for arc name's time conversion */
+-	filter_tm.tm_sec = arc_header[MBM_ARC_IDX_TIME];
+-	filter_tm.tm_min = arc_header[MBM_ARC_IDX_TIME + 1];
+-	filter_tm.tm_hour = arc_header[MBM_ARC_IDX_TIME + 2];
+-	filter_tm.tm_mday = arc_header[MBM_ARC_IDX_TIME + 3];
+-	filter_tm.tm_mon = arc_header[MBM_ARC_IDX_TIME + 4] - 1;		/* tm_mon - 0..11 */
+-	filter_tm.tm_year = arc_header[MBM_ARC_IDX_TIME + 5] - 1900;	/* tm_year - the number of years since 1900 */
++	memset(&arc_head->telegram_time, 0, sizeof(arc_head->telegram_time));
++	
++	arc_head->telegram_time.tm_isdst = ctx->start_tm.tm_isdst;	/* the same is_dst as for arc name's time conversion */
++	
++	arc_head->telegram_time.tm_sec = arc_head->raw[MBM_ARC_IDX_TIME];
++	arc_head->telegram_time.tm_min = arc_head->raw[MBM_ARC_IDX_TIME + 1];
++	arc_head->telegram_time.tm_hour = arc_head->raw[MBM_ARC_IDX_TIME + 2];
++	arc_head->telegram_time.tm_mday = arc_head->raw[MBM_ARC_IDX_TIME + 3];
++	arc_head->telegram_time.tm_mon = arc_head->raw[MBM_ARC_IDX_TIME + 4] - 1;		/* tm_mon - 0..11 */
++	arc_head->telegram_time.tm_year = arc_head->raw[MBM_ARC_IDX_TIME + 5] - 1900;	/* tm_year - the number of years since 1900 */
++
++	return 0;
++}	
++
++/* return:  bool - 0 - not found, 1 - found */
++static int is_same_arc_fetched_already(mbm_context_t *ctx, const char *arc_id_str, 
++										const char *arc_time_str)
++{
++	int r;
++	char path[MBM_PATH_MAX];
++	char *sub_dir;
++	int arc_type;
++
++	/* setup scanning directory */
++	ctx->rec_len = ctx->fname_size_arc;	/* fixed rec len for archive files */
++	ctx->rec_max_count = ctx->scan_buf_size / ctx->rec_len;
++
++	log_debug("scandir for fetch arc prepared: rec_len=%d, rec_max_count=%d, "
++				"arc time(filter time): %s", 
++				(int)ctx->rec_len, (int)ctx->rec_max_count, arc_time_str);
++
++	/* scan current dir to find at least an arc file which time is up to 15 minutes different
++	 * with current archive's time 
++	 * note: same_arc_filter uses ctx->id_str
++	 */
++	memcpy(ctx->id_str, arc_id_str, sizeof(ctx->id_str));
++
++	/* prepare archives directory path */
++	strcpy(path, ctx->root_dir);
++	sub_dir = &path[ctx->root_dir_len];
++	*sub_dir = '/';
++	sub_dir++;
++	strcpy(sub_dir, SUBDIR_ARCHIVE);
++	sub_dir += sizeof(SUBDIR_ARCHIVE) - 1;
++	*sub_dir = '/';
++	sub_dir++;	/* now sub_dir points to variable part of path after xxx/archive/ */
++	
++	/* for each arc-type: */
++	for (arc_type = 0; arc_type < MBM_ARC_TYPE_COUNT; arc_type++) {
++		size_t len;
++		struct stat sb;
++
++		/* ... - build next arc directory to scan ...  */
++		len = strlen(mbm_arc_subdirs[arc_type]);
++		memcpy(sub_dir, mbm_arc_subdirs[arc_type], len);
++		sub_dir[len] = '/';
++		strcpy(&sub_dir[len + 1], arc_id_str);
++
++		/* ... - check if directory exists: ... */
++		r = stat(path, &sb);
++		if (!r && S_ISDIR(sb.st_mode)) {
++			/* ... -- exists - scan for same arc */
++			r = mbm_scan_dir(ctx, path, same_arc_filter, 1);
++			if (!r && ctx->rec_count) {
++				log_debug("same arc id=%s found in %s dir, don't fetch it", 
++							arc_id_str, sub_dir);
++				return 1;
++			} else {
++				log_debug("same arc id=%s not found (dir %s scanned)", 
++							arc_id_str, sub_dir);
++			}
++		} else {
++			/*
++			* ... -- do not exist, not a dir - no same arcs or
++			* ... --- scan failed to find a same arc
++			*/
++			log_debug("same arc id=%s not found (%s - not a dir)", 
++						arc_id_str, sub_dir);
++		}
++	}
++
++	return 0;
++}
++
++
++/* Assume: work_path is set to /root/arcs/arc-type", work_path_len is set properly too
++ * returns count of fetched archives: 1 or 0
++ * channel & mon_shift are used for logging only, mon_shift < 0 means that it should not be logged
++ */
++static int fetch_slave_channel_archive(mbm_context_t *ctx, mbm_slave_dev_t *slave,
++										arc_descriptor_t *arc)
++{
++	int r;
++	struct tm filter_tm;
++	time_t arc_expiration_time;
++	char arc_time_str[MBM_DATETIME_LEN + 1];
++	arc_header_t arc_head;
++	mbm_modbus_file_t arc_file;
++
++	r = read_slave_arc_header(ctx, slave, arc, &arc_head);
++	if (r) {
++		return 0;	/* no file fetched */
++	}
++
++	/* ensure arc's size > 0 for further use */
++	if (!(arc_head.telegram_size > 0)) {
++		return 0;
++	}
++
++	memcpy(&filter_tm, &arc_head.telegram_time, sizeof(filter_tm));
+ 	strftime(arc_time_str, sizeof(arc_time_str), MBM_DATETIME_FORMAT, &filter_tm);
+ 	ctx->filter_time = mktime(&filter_tm);
+ 
+@@ -436,190 +611,190 @@
+ 	filter_tm.tm_mon += MBM_OLD_ARC_MONTH;
+ 	arc_expiration_time = mktime(&filter_tm);
+ 	if (arc_expiration_time < ctx->start_time) {
++		//TODO: according to requirements v2 this filtering may be wrong???
+ 		log_debug("arc is too old - don't fetch it: dev %s (addr=%d), channel=%d, mon=%d: arc_id=%s",
+-			ctx->mb_slave[addr].dev_sn_str, addr, channel, mon_shift, ctx->id_str);
++			slave->dev_sn_str, slave->addr, arc->channel, arc->mon_shift, arc_head.arc_id_str);
+ 		return 0;
+ 	}
+ 
++	/* check whether or not the same archive (+-15min) fetched already (before creating of arc's directory) 
++	* so if the directory is absent we can skip its scanning, 
++	* moreover if the arc is found somewhere else we won't need to create the directory at all
++	*/
++	r = is_same_arc_fetched_already(ctx, arc_head.arc_id_str, arc_time_str);
++	if (r) {
++		return 0;	/* no file fetched */
++	}
++
+ 	/* make id directory path and create the directory as need */
+-	r = mbm_init_subdir(ctx, ctx->work_path, ctx->id_str);
++	r = mbm_init_sub_dir(ctx->work_path, arc_head.arc_id_str, ctx->root_dir_len);
+ 	if (r) {
+ 		return 0;	/* no file fetched */
+ 	}
+ 	/* so work_path is set to "/root/arcs/arc-type/arc-id" directory, update path's len: 1 - slash, 8 - arc-id*/
+ 	ctx->work_path_len +=  1 + 8;
+ 
+-	/* setup scanning directory */
+-	ctx->rec_len = ctx->fname_size_arc;	/* fixed rec len for archive files */
+-	ctx->rec_max_count = ctx->scan_buf_size / ctx->rec_len;
+ 
+-	log_debug("scandir for fetch arc prepared: rec_len=%d, rec_max_count=%d, "
+-				"arc time(filter time): %s", 
+-				(int)ctx->rec_len, (int)ctx->rec_max_count, arc_time_str);
++	/* fetch and store current arc, if same arc not found and data size > 0 */
++	
++	arc_file.addr = (uint8_t)(slave->addr);
++	arc_file.file_no = (uint16_t)arc->file_no;
++	arc_file.rec_no = 0;
++	/* confirmed by OWEN: TelegramSize in bytes, so convert them into regs, 
++	* then, when saving file, convert back 
++	*/
++	arc_file.regs_count = arc_head.telegram_size / 2 + (arc_head.telegram_size & 1);
+ 
+-	/* scan current dir to find at least an arc file which time is up to 15 minutes different
+-	 * with current archive's time 
+-	 */
+-	r = mbm_scan_dir(ctx, ctx->work_path, same_arc_filter, 1);
+-	if (r) {
++	r = mbm_modbus_read_file(ctx->mb, &arc_file);
++	if (r < 0) {
++		log_err(mbm_str_err_fetch_arc, slave->dev_sn_str, slave->addr, 
++				arc->channel, arc->mon_shift, modbus_strerror(errno));
++		/* try removing created directory */
++		r = rmdir(ctx->work_path);
++#if DEBUG
++		if (r) {
++			log_debug("failed to remove dir: %s", ctx->work_path);
++		} else {
++			log_debug("removed successfully dir: %s", ctx->work_path);
++		}
++#endif
+ 		return 0;	/* no file fetched */
+ 	}
+ 
+-	log_debug("same arc id=%s %sfound, %sfetch it", ctx->id_str,
+-		ctx->rec_count ? "" : "NOT ",
+-		ctx->rec_count ? "DON'T " : "");
+-
+-	/* if item filtered, skip current arc, otherwise - fetch and store */
+-	if (!ctx->rec_count) {
+-		mbm_modbus_file arc_file;
+-		arc_file.addr = (uint8_t)addr;
+-		arc_file.file_no = (uint16_t)file_no;
+-		arc_file.rec_no = 0;
+-		/* confirmed by OWEN: TelegramSize in bytes, so convert them into regs, 
+-		* then, when saving file, convert back 
+-		*/
+-		arc_file.regs_count = arc_header[MBM_ARC_IDX_SIZE] / 2 +
+-						(arc_header[MBM_ARC_IDX_SIZE] & 1 ? 1 : 0);
+-
+-		r = mbm_modbus_read_file(ctx, &arc_file);
+-		if (r < 0) {
+-			log_err(mbm_str_err_fetch_arc, ctx->mb_slave[addr].dev_sn_str, addr, 
+-					channel, mon_shift, modbus_strerror(errno));
+-			return 0;	/* no file fetched */
+-		}
+-
+-		/* prepare work_path: "/root/arcs/arc-type/arc-id/arc-file-name" 
+-		* note: path length is checked in init_arc_fs()
+-		*/
+-		ctx->work_path[ctx->work_path_len] = '/';
+-		sprintf(&ctx->work_path[ctx->work_path_len + 1], "%s-%s-%s",
+-			ctx->id_str, arc_time_str, ctx->mb_slave[addr].dev_sn_str);
+-
+-		log_debug("file name for arc %s built: %s", ctx->id_str, ctx->work_path);		
+-
+-		/* correct file length as need, see arc_file.regs_count comments above */
+-		if (arc_header[MBM_ARC_IDX_SIZE] & 1) {
+-			/* we've read 1 byte more then actual file length */
+-			arc_file.data_len -= 1;
+-			log_debug("arc file length corrected by 1 byte: %u", arc_file.data_len);
+-		} else {
+-			log_debug("arc file length NOT corrected: %u", arc_file.data_len);
+-		}
++	/* prepare work_path: "/root/arcs/arc-type/arc-id/arc-file-name" 
++	* note: path length is checked in init_arc_fs()
++	*/
++	ctx->work_path[ctx->work_path_len] = '/';
++	sprintf(&ctx->work_path[ctx->work_path_len + 1], "%s-%s-%s",
++			arc_head.arc_id_str, arc_time_str, slave->dev_sn_str);
++
++	log_debug("file name for arc %s built: %s", arc_head.arc_id_str, ctx->work_path);		
++
++	/* correct file length as need, see arc_file.regs_count comments above */
++	if (arc_head.telegram_size & 1) {
++		/* we've read 1 byte more then actual file length */
++		arc_file.data_len -= 1;
++		log_debug("arc file length corrected by 1 byte: %u", arc_file.data_len);
++	} else {
++		log_debug("arc file length NOT corrected: %u", arc_file.data_len);
++	}
+ 
+-		r = mbm_save_arc_file(ctx, (char *)arc_file.data, arc_file.data_len);
+-		if (!r) {
+-			log_info(mbm_str_arc_fetched, ctx->mb_slave[addr].dev_sn_str, 
+-					channel, mon_shift, &ctx->work_path[ctx->root_dir_len]);
+-			count = 1; /* OK */
+-		} else {
+-			log_err(mbm_str_err_save_arc, ctx->mb_slave[addr].dev_sn_str, addr, 
+-					channel, mon_shift, strerror(-r));
+-		}
++	r = mbm_save_arc_file(ctx->work_path, (char *)arc_file.data, arc_file.data_len);
++	if (r) {
++		log_err(mbm_str_err_save_arc, slave->dev_sn_str, slave->addr, 
++				arc->channel, arc->mon_shift, strerror(-r));
++		return 0;
+ 	}
++
++	log_einfo(mbm_str_arc_fetched, slave->dev_sn_str, 
++			arc->channel, arc->mon_shift, &ctx->work_path[ctx->root_dir_len]);
+ 	
+-	return count;
++	return 1;	/* OK */
++}
++
++
++typedef struct fetch_arc_info {
++	int count;	/* count of arcs fetched */
++	int arc_type;	/* current arc type */
++	size_t arc_type_dir_len; /* keep length of arc-type directory through slave iterations */
++} fetch_arc_info_t;
++
++/*
++* channel 0 .. MBM_ARC_CHANNEL_COUNT-1
++* mon_shift - -1, 0 .. MBM_ARC_MON_COUNT -1: -1 - current archive, >= 0 - monthly
++* return 0 - OK, < 0 - err (inval channel or mon_shift)
++*/
++static int make_arc_descriptor(int channel, int mon_shift, arc_descriptor_t *arc)
++{
++	if (channel < 0 || channel >= MBM_ARC_CHANNEL_COUNT ||
++		mon_shift < -1 || mon_shift >= MBM_ARC_MON_COUNT) {
++		return -EINVAL;
++	}
++
++	if (mon_shift == -1) {
++		arc->file_no = MBM_ARC_FILE_NO_BASE_CUR + channel;
++		arc->header_reg = MBM_ARC_HEADER_BASE_CUR + 
++						(MBM_ARC_HEADER_REG_COUNT) * channel;
++	} else {
++		arc->file_no = MBM_ARC_FILE_NO_BASE_MON + 
++					(MBM_ARC_MON_COUNT) * channel + 
++					mon_shift;
++		arc->header_reg = MBM_ARC_HEADER_BASE_MON + 
++						(MBM_ARC_HEADER_REG_COUNT) * (
++							(MBM_ARC_MON_COUNT) * channel + 
++							mon_shift
++						);
++	}
++	arc->channel = channel;
++	arc->mon_shift = mon_shift;
++
++	return 0;
+ }
+ 
+ /* Assume: work_path is set to /root/arcs/arc-type", work_path_len is set properly too
+  * returns count of fetched archives: >= 0 
+  */
+-static int fetch_archives_of_type(mbm_context *ctx, int arc_type)
++static int forslave_fetch_archives(mbm_context_t *ctx, mbm_slave_dev_t *slave, void *data)
+ {
+-	int r;
+-	int count = 0;	
+-	int addr;
+-	size_t arc_type_dir_len;
+-	int file_no;
+ 	int channel;	/* the same as sensor order number */
+-	int mon_shift;
+-	int arc_header_reg;
+-
+-	if (arc_type < 0 || arc_type >= MBM_ARC_TYPE_COUNT) {
+-		log_debug("%s: unsupported arc_type %d", arc_type);
+-		return 0;
+-	}
++	fetch_arc_info_t *info = (fetch_arc_info_t *)data;
++	arc_descriptor_t arc;
+ 
+-	arc_type_dir_len = ctx->work_path_len;
++	log_debug("fetch arcs of type %d from dev %s (addr=%d) - started",
++				info->arc_type, slave->dev_sn_str, slave->addr);
+ 
+-	/* for each valid slave: */
+-	for (addr = MBM_SLAVE_ADDR_MIN; addr <= ctx->mb_max_addr; addr++) {
+-		if (!ctx->mb_slave[addr].flags.addr_check_passed) {
+-			log_debug("skip addr %d (check not passed)", addr);
+-			continue;
++	switch (info->arc_type) {
++	case MBM_ARC_TYPE_CUR:
++		for (channel = 0; channel < MBM_ARC_CHANNEL_COUNT; channel++) {
++			make_arc_descriptor(channel, -1, &arc);
++
++			log_debug("fetch arc of type 'CUR' from dev %s (addr=%d): "
++				"channel=%d, header_reg=0x%04X, file_no=%d",
++						slave->dev_sn_str, slave->addr, 
++						arc.channel, arc.header_reg, arc.file_no);
++			info->count += fetch_slave_channel_archive(ctx, slave, &arc);
++
++			/* restore work_path */
++			ctx->work_path[info->arc_type_dir_len] = 0;
++			ctx->work_path_len = info->arc_type_dir_len;
+ 		}
++		break;
+ 
+-		/* target addr:=addr */
+-		r = modbus_set_slave(ctx->mb, addr);
+-		if (r < 0) {
+-			log_err(mbm_str_err_fetch_arcs, ctx->mb_slave[addr].dev_sn_str, addr, 
+-					modbus_strerror(errno));
+-			continue;	/* not fatal: try another device */
+-		}
+-
+-		log_debug("fetch arcs of type %d from dev %s (addr=%d) - started",
+-					arc_type, ctx->mb_slave[addr].dev_sn_str, addr);
+-
+-		switch (arc_type) {
+-		case MBM_ARC_TYPE_CUR:
+-			for (channel = 0; channel < MBM_ARC_CHANNEL_COUNT; channel++) {
+-				file_no = MBM_ARC_FILE_NO_BASE_CUR + channel;
+-				arc_header_reg = MBM_ARC_HEADER_BASE_CUR + 
+-								(MBM_ARC_HEADER_REG_COUNT) * channel;
+-
+-				log_debug("fetch arcs of type 'CUR' from dev %s (addr=%d): "
+-					"channel=%d, arc_header_reg=0x%04X, file_no=%d",
+-							ctx->mb_slave[addr].dev_sn_str, addr, 
+-							channel, arc_header_reg, file_no);
+-				count += fetch_channel_archive(ctx, addr, channel, -1, 
+-												arc_header_reg, file_no);
++	case MBM_ARC_TYPE_MON:
++		for (channel = 0; channel < MBM_ARC_CHANNEL_COUNT; channel++) {
++			int mon_shift;
++			for (mon_shift = 0; mon_shift < MBM_ARC_MON_COUNT; mon_shift++) {
++				make_arc_descriptor(channel, mon_shift, &arc);
++
++				log_debug("fetch arc of type 'MON' from dev %s (addr=%d): "
++					"channel=%d, header_reg=0x%04X, file_no=%d",
++							slave->dev_sn_str, slave->addr, 
++							arc.channel, arc.header_reg, arc.file_no);
++				info->count += fetch_slave_channel_archive(ctx, slave, &arc);
+ 
+ 				/* restore work_path */
+-				ctx->work_path[arc_type_dir_len] = 0;
+-				ctx->work_path_len = arc_type_dir_len;
++				ctx->work_path[info->arc_type_dir_len] = 0;
++				ctx->work_path_len = info->arc_type_dir_len;
+ 			}
+-			break;
+-
+-		case MBM_ARC_TYPE_MON:
+-			for (channel = 0; channel < MBM_ARC_CHANNEL_COUNT; channel++) {
+-				for (mon_shift = 0; mon_shift < MBM_ARC_MON_COUNT; mon_shift++) {
+-					file_no = MBM_ARC_FILE_NO_BASE_MON + 
+-							(MBM_ARC_MON_COUNT) * channel + 
+-							mon_shift;
+-					arc_header_reg = MBM_ARC_HEADER_BASE_MON + 
+-									(MBM_ARC_HEADER_REG_COUNT) * (
+-										(MBM_ARC_MON_COUNT) * channel + 
+-										mon_shift
+-									);
+-					log_debug("fetch arcs of type 'MON' from dev %s (addr=%d): "
+-						"channel=%d, arc_header_reg=0x%04X, file_no=%d",
+-								ctx->mb_slave[addr].dev_sn_str, addr, 
+-								channel, arc_header_reg, file_no);
+-					count += fetch_channel_archive(ctx, addr, channel, mon_shift, 
+-													arc_header_reg, file_no);
+-
+-					/* restore work_path */
+-					ctx->work_path[arc_type_dir_len] = 0;
+-					ctx->work_path_len = arc_type_dir_len;
+-				}
+-			}
+-			break;
+ 		}
+-
+-		log_debug("fetch arcs of type %d from dev %s (addr=%d) - done",
+-					arc_type, ctx->mb_slave[addr].dev_sn_str, addr);
++		break;
+ 	}
+ 
+-	return count;
++	log_debug("fetch arcs of type %d from dev %s (addr=%d) - done",
++				info->arc_type, slave->dev_sn_str, slave->addr);
++
++	return 1;	
+ }
+ 
+-int mbm_fetch_archives(mbm_context *ctx)
++void mbm_fetch_archives(mbm_context_t *ctx)
+ {
+-	int count = 0;	
+-	int i;
+ 	size_t arc_dir_len;
++	fetch_arc_info_t info;
+ 
+ 	log_info(mbm_str_fetch_archives_started);
+ 
++	memset(&info, 0, sizeof(info));
++
+ 	/* prepare root directory for archives */
+ 	strcpy(ctx->work_path, ctx->root_dir);
+ 	ctx->work_path[ctx->root_dir_len] = '/';
+@@ -628,87 +803,674 @@
+ 
+ 	log_debug("fetch archives: work path is set to arc root: '%s'", ctx->work_path);
+ 
+-	for (i = 0; i < MBM_ARC_TYPE_COUNT; i++) {
++	for (info.arc_type = 0; info.arc_type < MBM_ARC_TYPE_COUNT; info.arc_type++) {
+ 		/* set arc-type work path */
+ 		ctx->work_path[arc_dir_len] = '/';
+-		strcpy(&ctx->work_path[arc_dir_len + 1], mbm_arc_subdirs[i]);
+-		ctx->work_path_len = arc_dir_len + 1 + strlen(mbm_arc_subdirs[i]);	/* len is OK - checked in init_arc_fs*/
++		strcpy(&ctx->work_path[arc_dir_len + 1], mbm_arc_subdirs[info.arc_type]);
++		ctx->work_path_len = arc_dir_len + 1 + strlen(mbm_arc_subdirs[info.arc_type]);	/* len is OK - checked in init_arc_fs*/
+ 		log_debug("fetch archives: work path is set to arc type dir: '%s'", ctx->work_path);
+ 
+-		count += fetch_archives_of_type(ctx, i);
+-		
+-		/* no need to restore work path - it will be set up correctly at the next iteration */
++		info.arc_type_dir_len = ctx->work_path_len;
++		foreach_active_slave(ctx, &forslave_fetch_archives, mbm_str_err_fetch_arcs, &info);
+ 	}
+ 	
+-	log_info(mbm_str_fetch_archives_stopped, count);
+-	return 0;
++	log_info(mbm_str_fetch_archives_done, info.count);
+ }
+ 
+-int mbm_sync_time(mbm_context *ctx)
++static int forslave_sync_time(mbm_context_t *ctx, mbm_slave_dev_t *slave, void *data)
+ {
+-	int addr;
+-	int count = 0;
+ 	time_t cur_time;
+ 	struct tm cur_tm;
+-	int r = 0;
+ 	uint16_t calendar[6];
++	int r;
++
++	/* get current time */
++	cur_time = time(NULL);
++	cur_time += (MBM_TIME_CORRECTION_SEC);
++	if (!localtime_r(&cur_time, &cur_tm)) {
++		/* sys err */
++		log_err(mbm_str_err_sys_time, strerror(errno));
++		return 0; /* do not continue - fatal */
++	}
++
++	/* Setup device calendar. The format is:
++	 * sec 0..59
++	 * min 0..59
++	 * hour 0..23
++	 * mday 1..31
++	 * mon 1.12
++	 * year 2010..2100 
++	 */
+ 
++	calendar[0] = cur_tm.tm_sec;
++	calendar[1] = cur_tm.tm_min;
++	calendar[2] = cur_tm.tm_hour;
++	calendar[3] = cur_tm.tm_mday;
++	calendar[4] = cur_tm.tm_mon + 1;		/* tm_mon 0..11 */
++	calendar[5] = cur_tm.tm_year + 1900;	/* tm_year - the number of years since 1900 */
++
++	/* do not use function 0x50 (SetTime) from owen doc - confirmed by Owen */
++	r = modbus_write_registers(ctx->mb, MBM_CALENDAR_REG, 6, (uint16_t *)calendar);
++	if (r < 0) {
++		log_err(mbm_str_err_sync_time, slave->dev_sn_str, slave->addr, 
++				modbus_strerror(errno));
++		return 1;	/* not fatal: try another device */
++	}
++
++	/* update counter of synced devices */
++	(*(int*)data)++;
++	log_einfo(mbm_str_slave_time_synced, slave->dev_sn_str);
++	
++	return 1;
++}
++
++void mbm_sync_time(mbm_context_t *ctx)
++{
++	int count = 0;
++	
+ 	log_info(mbm_str_sync_time_started);
++
++	foreach_active_slave(ctx, &forslave_sync_time, mbm_str_err_sync_time, &count);
++
++	log_info(mbm_str_sync_time_done, count);
++}
++
++typedef struct wl_source_table_info {
++#ifdef DEBUG	
++	FILE *fp;		/* white list source table file */
++	int fp_err;	/* flag if set - exit was due to file IO error */
++	int count;	/* count of records written */
++#endif
++
++	mbm_wl_src_tab_t *src_tab;
++} wl_source_table_info_t;
++
++static int forslave_add_white_list_source_data(mbm_context_t *ctx, 
++											mbm_slave_dev_t *slave, void *data)
++{
++	int r;
++	int channel;
++	wl_source_table_info_t *info = (wl_source_table_info_t *)data;
++	arc_descriptor_t arc;
++	arc_header_t arc_head;
++
++	/* for each current arc 0..255:
++	* - read header, 
++	* - read arc, 
++	* - make a record for source table
++	* IDCounter, RSSI, IDPK
++	* - write the record to the source table
++	*/
++	for (channel = 0; channel < MBM_ARC_CHANNEL_COUNT; channel++) {
++		if (info->src_tab->count >= MBM_WHITE_LIST_MAX_RECORDS) {
++			log_warn("reading of arcs for white list source table stopped: max number of records read");
++			return 0;
++		}
++		
++		make_arc_descriptor(channel, -1, &arc);
++
++		log_debug("process arc for wl source table: dev %s (addr=%d): "
++			"channel=%d, arc_header_reg=0x%04X, file_no=%d",
++			slave->dev_sn_str, slave->addr, 
++			arc.channel, arc.header_reg, arc.file_no);
++
++		r = read_slave_arc_header(ctx, slave, &arc, &arc_head);
++		if (r) {
++			continue;
++		}
++
++		/* header got */
++		if (arc_head.telegram_size > 0) {
++			int16_t rssi;
++			mbm_modbus_file_t arc_file;
++			
++			arc_file.addr = (uint8_t)(slave->addr);
++			arc_file.file_no = (uint16_t)arc.file_no;
++			arc_file.rec_no = 0;
++			/* confirmed by OWEN: TelegramSize in bytes, so convert them into regs, 
++			* then, when saving file, convert back 
++			*/
++			arc_file.regs_count = arc_head.telegram_size / 2 + (arc_head.telegram_size & 1);
++
++			r = mbm_modbus_read_file(ctx->mb, &arc_file);
++			if (r < 0) {
++				log_err(mbm_str_err_fetch_arc, slave->dev_sn_str, slave->addr, 
++						arc.channel, -1, modbus_strerror(errno));
++				continue;
++			}
++
++			/* do not correct data length - we need only RSSI field which is first */
++			rssi = (int16_t)MODBUS_GET_INT16_FROM_INT8(arc_file.data, 0);
++
++#ifdef DEBUG
++			if (info->fp) {
++				char arc_time_str[MBM_DATETIME_LEN + 1];
++				/* save the record */
++				/* "%Y-%m-%d-%H-%M" len is the same as for MBM_DATETIME_FORMAT */
++				strftime(arc_time_str, sizeof(arc_time_str), "%Y-%m-%d %H:%M", &arc_head.telegram_time);
++				fprintf(info->fp, "%s" MBM_CSV_FIELD_SEP "%s" MBM_CSV_FIELD_SEP 
++					"%d" MBM_CSV_FIELD_SEP "'%s'\n", 
++					arc_head.arc_id_str, slave->dev_sn_str, rssi, arc_time_str);
++				info->count++;
++			}
++#endif
++
++			info->src_tab->tab[info->src_tab->count].arc_id = arc_head.arc_id;
++			info->src_tab->tab[info->src_tab->count].pk_id = slave->dev_sn;
++			info->src_tab->tab[info->src_tab->count].rssi = rssi;
++			info->src_tab->count++;
++		}
++	}
++
++	return 1;
++}
++
++static int make_white_list_source_table(mbm_context_t *ctx)
++{
++	wl_source_table_info_t info;
++
++	info.src_tab = ctx->wl.src_tab;
++
++#ifdef DEBUG
++	info.fp_err = 0;
++	info.count = 0;
++	info.fp = fopen(MBM_WL_SOURCE_TABLE_FILE, "w");
++	if (!info.fp) {
++		log_err("failed to create wl source table file: %s", strerror(errno));
++	}
++#endif
++
++	foreach_active_slave(ctx, &forslave_add_white_list_source_data,
++							mbm_str_err_wl_source_table, &info);
++#ifdef DEBUG
++	if (info.fp_err) {
++		log_err("error while writing to wl source table file: %s", strerror(errno));
++	}
++	if (info.fp) {
++		fclose(info.fp);
++	}
++#endif
+ 	
+-	/* for each valid slave: */
+-	for (addr = MBM_SLAVE_ADDR_MIN; addr <= ctx->mb_max_addr; addr++) {
+-		if (!ctx->mb_slave[addr].flags.addr_check_passed) {
+-			log_debug("skip addr %d (check not passed)", addr);
++	log_info(mbm_str_wl_source_table_done, info.src_tab->count);
++	return 0;
++}
++
++static int compare_wl_src_rec(const void *rec1, const void *rec2)
++{
++	if (((mbm_wl_src_rec_t *)rec1)->arc_id < ((mbm_wl_src_rec_t *)rec2)->arc_id) {
++		return -1;
++	} else if (((mbm_wl_src_rec_t *)rec1)->arc_id > ((mbm_wl_src_rec_t *)rec2)->arc_id) {
++		return 1;
++	}
++	return 0;
++}
++
++#ifdef DEBUG
++static void save_white_list_source_table_sorted(mbm_context_t *ctx)
++{
++	char arc_id_str[8 + 1];
++	char pk_id_str[8 + 1];
++	FILE *fp;
++	size_t i;
++	mbm_wl_src_tab_t *src_tab;
++
++	fp = fopen(MBM_WL_SOURCE_TABLES_FILE, "w");
++	if (!fp) {
++		log_err("failed to create sorted wl source table file: %s", strerror(errno));
++		return;
++	}
++
++	src_tab = ctx->wl.src_tab;
++	for (i = 0; i < src_tab->count; i++) {
++		arcid_to_str(src_tab->tab[i].arc_id, arc_id_str);
++		devsn_to_str(src_tab->tab[i].pk_id, pk_id_str);
++		fprintf(fp, "%s" MBM_CSV_FIELD_SEP "%s" MBM_CSV_FIELD_SEP "%d" 
++				MBM_CSV_FIELD_SEP "%08X\n", 
++				arc_id_str, pk_id_str, src_tab->tab[i].rssi, src_tab->tab[i].arc_id);
++	}
++	
++	fclose(fp);
++}
++#endif
++
++/* create path and build file-path of setList.csv
++* return 0 - OK, < 0 - err
++* use ctx->work_path, ctx->root_dir - result in ctx->work_path
++*/
++static int init_set_list_file_path(mbm_context_t *ctx, int ok)
++{
++	int r;
++	size_t len;
++
++	strcpy(ctx->work_path, ctx->root_dir);
++	r = mbm_init_sub_dir(ctx->work_path, 
++						ok ? SUBDIR_SERVICEOK : SUBDIR_SERVICE, 
++						ctx->root_dir_len);
++	if (!r) {
++		r = mbm_init_sub_dir(ctx->work_path, SUBDIR_SERVICE_SETLIST, ctx->root_dir_len);
++	}
++	if (r) {
++		return r;
++	}
++	ctx->work_path_len = strlen(ctx->work_path);
++
++	/* build result file path */
++	len = ctx->work_path_len + 1 + sizeof(FILE_NAME_SETLIST) - 1;
++	if (len >= sizeof(ctx->work_path)) {
++		log_err(mbm_str_err_wl_path_too_long, len);
++		return -1;
++	}
++
++	ctx->work_path[ctx->work_path_len] = '/';
++	strcpy(&ctx->work_path[ctx->work_path_len + 1], FILE_NAME_SETLIST);
++	return 0;
++}
++
++static int make_white_list(mbm_context_t *ctx)
++{
++	size_t i, max_rssi;
++	uint32_t cur_arc_id;
++	char arc_id_str[8 + 1];
++	char pk_id_str[8 + 1];
++	FILE *fp;
++//	char path[MBM_PATH_MAX];
++	int r;
++
++	mbm_wl_src_tab_t *src_tab = ctx->wl.src_tab;
++	
++	if (!src_tab->count) {
++		log_debug("no wl source records - nothing to do");
++		return 0;
++	}
++	
++	/* use in-memory table to make the list */
++	qsort(src_tab->tab, src_tab->count, sizeof(src_tab->tab[0]),
++			&compare_wl_src_rec);
++	log_einfo(mbm_str_wl_source_table_sorted);
++
++#ifdef DEBUG
++	save_white_list_source_table_sorted(ctx);
++#endif
++	
++	i = 0;
++	cur_arc_id = src_tab->tab[i].arc_id;
++	max_rssi = i;
++	
++	while (1) {
++		i++;
++
++		if ((i < src_tab->count) &&
++			(cur_arc_id == src_tab->tab[i].arc_id)) {
++			if (src_tab->tab[i].rssi > src_tab->tab[max_rssi].rssi) {
++				max_rssi = i;
++			}
+ 			continue;
+ 		}
+ 
+-		/* target addr:=addr */
+-		r = modbus_set_slave(ctx->mb, addr);
++		/* i wrong or arc_id changed - mark previous arc_id's best RSSI index */
++		MBM_WL_SRC_TAB_RECORD_MARK(src_tab, max_rssi);
++		src_tab->marked_count++;
++		
++		if (i >= src_tab->count) {
++			/* no more records (i wrong) */
++			break;
++		}
++
++		/* otherwise arc_id is changed */
++		cur_arc_id = src_tab->tab[i].arc_id;
++		max_rssi = i;
++	}
++	log_info(mbm_str_wl_produced, src_tab->marked_count);
++
++	/* save white list to the result file */
++	r = init_set_list_file_path(ctx, 0);
++	if (r) {
++		return r;
++	}
++
++	fp = fopen(ctx->work_path, "w");
++	if (!fp) {
++		log_err(mbm_str_err_wl_file, &ctx->work_path[ctx->root_dir_len + 1], strerror(errno));
++		return -1;
++	}
++	
++	for (i = 0; i < src_tab->count; i++) {
++		if (MBM_WL_SRC_TAB_RECORD_MARKED(src_tab, i)) {
++			arcid_to_str(src_tab->tab[i].arc_id, arc_id_str);
++			devsn_to_str(src_tab->tab[i].pk_id, pk_id_str);
++			fprintf(fp, "%s" MBM_CSV_FIELD_SEP "%s\n", arc_id_str, pk_id_str);
++		}
++	}
++	fclose(fp);
++	log_info(mbm_str_wl_file_saved, &ctx->work_path[ctx->root_dir_len + 1]);
++
++	return 0;
++}
++
++static int forslave_clean_white_list(mbm_context_t *ctx, mbm_slave_dev_t *slave, void *data)
++{
++	uint16_t regs[MBM_MAX_WRITE_REGISTRES];
++	int count, rest;
++	int regs_addr;
++
++	memset(regs, 0, sizeof(regs));
++	rest = MBM_WHITE_LIST_PK_RECORDS * 2; /* total count of regs to zero */
++	regs_addr = MBM_WHITE_LIST_BASE_REG;
++
++	while (rest > 0) {
++		int r;
++
++		count = MBM_MAX_WRITE_REGISTRES;
++		if (count > rest) {
++			count = rest;
++		}
++
++		r = modbus_write_registers(ctx->mb, regs_addr, count, regs);
+ 		if (r < 0) {
+-			log_err(mbm_str_err_sync_time, ctx->mb_slave[addr].dev_sn_str, addr, 
++			log_err(mbm_str_err_wl_clean, slave->dev_sn_str, slave->addr, 
+ 					modbus_strerror(errno));
+-			continue;	/* not fatal: try another device */
++			return 1;	/* not fatal: try another device */
+ 		}
+ 
+-		/* get current time */
+-		cur_time = time(NULL);
+-		cur_time += (MBM_TIME_CORRECTION_SEC);
+-		if (!localtime_r(&cur_time, &cur_tm)) {
+-			/* sys err */
+-			log_err(mbm_str_err_sys_time, strerror(errno));
++		rest -= count;
++		regs_addr += count;
++	}
++
++	/* update counter of successfully processed devices */
++	(*(int*)data)++;
++	log_einfo(mbm_str_slave_wl_cleaned, slave->dev_sn_str);
++
++	/* is it sensible to reset all archives on the slave? - NO (Owen's answer) */
++	
++	return 1;
++
++}
++
++void mbm_clean_white_lists(mbm_context_t *ctx)
++{
++	int count = 0;
++	
++	log_info(mbm_str_clean_wl_started);
++
++	foreach_active_slave(ctx, &forslave_clean_white_list, mbm_str_err_wl_clean, &count);
++	
++	log_info(mbm_str_clean_wl_done, count);
++}
++
++int mbm_make_white_list(mbm_context_t *ctx)
++{
++	int r;
++
++	log_info(mbm_str_make_wl_started);
++
++	/* clean while lists on all slaves - ignore errors */
++	mbm_clean_white_lists(ctx);
++
++	/*TODO:  release LOCK ? */
++
++	if (ctx->cfg.delay_min > 0) {
++		log_info(mbm_str_make_wl_wait, ctx->cfg.delay_min / 60,
++										ctx->cfg.delay_min % 60);
++		sleep(ctx->cfg.delay_min * 60);
++		log_info(mbm_str_make_wl_continue);
++	}
++
++	do {
++		r = make_white_list_source_table(ctx);
++		if (r) {
++			break; /* fatal - no info for WL */
++		}
++
++		r = make_white_list(ctx);
++	} while (0);
++	
++	log_info(mbm_str_make_wl_done);
++	return r;
++}
++
++typedef struct wl_set_info {
++	mbm_wl_tab_t *tab;
++	int slave_count; /* count of slaves processed */
++	int wl_rec_count; /* total installed wl records */
++} wl_set_info_t;
++
++static int compare_wl_rec(const void *rec1, const void *rec2)
++{
++	if (((mbm_wl_rec_t *)rec1)->pk_id < ((mbm_wl_rec_t *)rec2)->pk_id) {
++		return -1;
++	} else if (((mbm_wl_rec_t *)rec1)->pk_id > ((mbm_wl_rec_t *)rec2)->pk_id) {
++		return 1;
++	}
++	return 0;
++}
++
++static int forslave_set_white_list(mbm_context_t *ctx, mbm_slave_dev_t *slave, void *data)
++{
++	wl_set_info_t *info = (wl_set_info_t *)data;
++	mbm_wl_tab_t *tab;
++	size_t i, first = 0;
++	uint16_t regs[MBM_MAX_WRITE_REGISTRES];
++	size_t records, rest;
++	int regs_addr;
++
++	tab = info->tab;
++
++	/* find first and last records of the slave id in the table, get count */
++	for (i = 0; i < tab->count; i++) {
++		if (tab->tab[i].pk_id == slave->dev_sn) {
++			first = i;
+ 			break;
+ 		}
++	}
++
++	if (!(i < tab->count)) {
++		/* nothing to do for the slave */
++		log_info(mbm_str_wl_no_records_for_slave, slave->dev_sn_str);
++		return 1;
++	}
+ 
+-		/* Setup device calendar. The format is:
+-		 * sec 0..59
+-		 * min 0..59
+-		 * hour 0..23
+-		 * mday 1..31
+-		 * mon 1.12
+-		 * year 2010..2100 
+-		 */
+-
+-		calendar[0] = cur_tm.tm_sec;
+-		calendar[1] = cur_tm.tm_min;
+-		calendar[2] = cur_tm.tm_hour;
+-		calendar[3] = cur_tm.tm_mday;
+-		calendar[4] = cur_tm.tm_mon + 1;		/* tm_mon 0..11 */
+-		calendar[5] = cur_tm.tm_year + 1900;	/* tm_year - the number of years since 1900 */
++	/* first record for the slave found, determine the count of the records */
++	for (i = i + 1; i < tab->count; i++) {
++		if (tab->tab[i].pk_id != slave->dev_sn) {
++			break;
++		}
++	}
+ 
+-		/* do not use function 0x50 (SetTime) from owen doc - confirmed by Owen */
+-		r = modbus_write_registers(ctx->mb, MBM_CALENDAR_REG, 6, (uint16_t *)calendar);
++	records = i - first;
++	log_einfo(mbm_str_wl_found_records_for_slave, slave->dev_sn_str, records);
++		
++	/* write respective ArcIDs to the slave's WL by blocks of up to 50 regs */
++	rest = records * 2;	/* number of regs to write */
++	regs_addr = MBM_WHITE_LIST_BASE_REG;
++
++	while (rest > 0) {
++		size_t count, count_rec;
++		int r;
++
++		count = MBM_MAX_WRITE_REGISTRES;
++		if (count > rest) {
++			count = rest;
++		}
++		count_rec = count /2;
++
++		/* set values */
++		for (i = 0; i < count_rec; i++) {
++			/*
++			* ArcID = MODBUS_GET_INT32_FROM_INT16: low register becomes high word in the result dword
++			* do reverse transformation: hi word set to low register
++			*/
++			regs[i * 2] = (uint16_t)((tab->tab[first + i].arc_id >> 16) & 0xffff);
++			regs[i * 2 + 1] = (uint16_t)(tab->tab[first + i].arc_id & 0xffff);
++		}
++
++		r = modbus_write_registers(ctx->mb, regs_addr, count, regs);
+ 		if (r < 0) {
+-			log_err(mbm_str_err_sync_time, ctx->mb_slave[addr].dev_sn_str, addr, 
++			log_err(mbm_str_err_wl_set, slave->dev_sn_str, slave->addr, 
+ 					modbus_strerror(errno));
+-			continue;	/* not fatal: try another device */
++			return 1;	/* not fatal: try another device */
+ 		}
+ 
+-		count++;
+-		log_info(mbm_str_slave_time_synced, ctx->mb_slave[addr].dev_sn_str);
++		rest -= count;
++		regs_addr += count;
++		first += count_rec;
+ 	}
+ 
+-	log_info(mbm_str_sync_time_stopped, count);
++#ifdef DEBUG
++	/* read first MAX_WRITE_REGISTERS of WL from the device to check */
++	{
++		int r;
++		memset(regs, 0, sizeof(regs));
++		r = modbus_read_registers(ctx->mb, 
++				MBM_WHITE_LIST_BASE_REG, MBM_MAX_WRITE_REGISTRES, regs);
++		log_debug_buf("dump of the first registres of just written white list", 
++					(unsigned char*)regs, sizeof(regs));
++	}
++#endif
++
++	/* update counter of successfully processed devices */
++	info->slave_count++;
++	info->wl_rec_count += records;
++	log_einfo(mbm_str_slave_wl_set, slave->dev_sn_str);
++	
++	return 1;
++}
++
++int mbm_set_white_list(mbm_context_t *ctx)
++{
++	int r;
++	FILE *fp;
++	char wl_line[20];	/* correct line is:str[8];str[8] */
++	int line_index;
++	mbm_wl_tab_t *tab;
++	wl_set_info_t info;
++	int saved_errno;
++
++	log_info(mbm_str_set_wl_started);
++
++	/* clean while lists on all slaves - ignore errors */
++	mbm_clean_white_lists(ctx);
++
++	/* build filepath (making dirs - which is not important */
++	r = init_set_list_file_path(ctx, 0);
++	if (r) {
++		return r;
++	}
++
++	/* open WL */
++	fp = fopen(ctx->work_path, "r");
++	if (!fp) {
++		log_err(mbm_str_err_wl_file_read, &ctx->work_path[ctx->root_dir_len + 1], 
++				strerror(errno));
++		return -1;
++	}
++
++	/* read WL into memory, onverting IDs to numbers */
++	tab = ctx->wl.tab;
++	tab->count = 0;
++	line_index = 0;
++	while ((tab->count < MBM_WHITE_LIST_MAX_RECORDS) &&
++		fgets(wl_line, sizeof(wl_line), fp) != NULL) {
++		char *arc_id_str, *pk_id_str;
++		size_t len;
++		int nl;
++
++		nl = 0;
++		line_index++;
++		len = strlen(wl_line);
++		if (wl_line[len -1] == '\n') {
++			nl = 1;
++			len--;
++			wl_line[len] = 0;
++		}
++		
++		if (len != 17 || wl_line[8] != MBM_CSV_FIELD_SEP_CHAR) {
++			log_debug("ignoring wrong line: %d", line_index);
++			if (!nl) {
++				line_index--;
++			}
++			continue;
++		}
++
++		arc_id_str = wl_line;
++		pk_id_str = &wl_line[9];
++		wl_line[8] = 0;
++
++		/* convert IDs from string to number */
++		tab->tab[tab->count].arc_id = str_to_arcid(arc_id_str);
++		tab->tab[tab->count].pk_id = str_to_devsn(pk_id_str);
++		tab->count++;
++	}
++
++	/* err? */
++	saved_errno = errno;
++	if ((tab->count < MBM_WHITE_LIST_MAX_RECORDS) && !feof(fp)) {
++		log_err(mbm_str_err_wl_file_read, &ctx->work_path[ctx->root_dir_len + 1], 
++				strerror(saved_errno));
++	}
+ 	
++	fclose(fp);
++
++	memset(&info, 0, sizeof(info));
++	info.tab = tab;
++
++	if (tab->count > 0) {
++		/* sort WL by IDPK */
++		qsort(tab->tab, tab->count, sizeof(tab->tab[0]), &compare_wl_rec);
++		log_einfo(mbm_str_wl_table_sorted);
++
++#ifdef DEBUG
++	do {
++		int i;
++		char pk_id_str[8 + 1];
++		fp = fopen("/tmp/wl_read.csv", "w");
++		if (!fp) {
++			log_err("filed to create debug wl file in tmp: %s", strerror(errno));
++			break;
++		}
++		
++		for (i = 0; i < tab->count; i++) {
++			devsn_to_str(tab->tab[i].pk_id, pk_id_str);
++			fprintf(fp, "0x%08X" MBM_CSV_FIELD_SEP "%s" MBM_CSV_FIELD_SEP "0x%08X\n", 
++					tab->tab[i].arc_id, pk_id_str, tab->tab[i].pk_id);
++		}
++		fclose(fp);
++	} while (0);
++#endif
++
++		/* for each active slave: find slave's WL records and write them to the slave, inc counter if WL installed on the slave */
++		foreach_active_slave(ctx, &forslave_set_white_list, mbm_str_err_wl_set, &info);
++
++		log_info(mbm_str_set_wl_done, info.slave_count, info.wl_rec_count);
++	} else {
++		log_info(mbm_str_set_wl_empty_done);
++	}
++
++	if (info.slave_count > 0 || !tab->count) { /* !tab->count - empty WL was set, i.e. cleared */
++		char ok_path[MBM_PATH_MAX];
++
++		/* assume the white list is 'successfully executed' - move it to serviceOK/setList */
++		do {
++			r = init_set_list_file_path(ctx, 1);
++			if (r) {
++				break;
++			}
++			strcpy(ok_path, ctx->work_path);
++
++			r = init_set_list_file_path(ctx, 0);
++			if (r) {
++				break;
++			}
++			
++			r = rename(ctx->work_path, ok_path);
++			if (r) {
++				log_err(mbm_str_err_move_wl_set, 
++					&ctx->work_path[ctx->root_dir_len + 1], 
++					&ok_path[ctx->root_dir_len + 1], strerror(errno));
++			} else {
++				log_info(mbm_str_move_wl_set, &ok_path[ctx->root_dir_len + 1]);
++			}
++		} while(0);
++	}
+ 	return 0;
+ }
+ 
+diff -Nru a/mbm_task_modbus.h b/mbm_task_modbus.h
+--- a/mbm_task_modbus.h	2012-05-10 17:21:21.000000000 +0300
++++ b/mbm_task_modbus.h	2012-08-06 14:31:21.000000000 +0300
+@@ -1,9 +1,18 @@
+ #ifndef _MBM_TASK_MODBUS_H_
+ #define _MBM_TASK_MODBUS_H_
+ 
+-extern int mbm_modbus_init(mbm_context *ctx);
+-extern void mbm_modbus_done(mbm_context *ctx);
+-extern int mbm_fetch_archives(mbm_context *ctx);
+-extern int mbm_sync_time(mbm_context *ctx);
++extern int mbm_modbus_init(mbm_context_t *ctx);
++extern void mbm_modbus_done(mbm_context_t *ctx);
++
++extern void mbm_fetch_archives(mbm_context_t *ctx);
++extern void mbm_sync_time(mbm_context_t *ctx);
++
++/* create white list based on all arcs from all PKs and save it to the file in setList\ */
++extern int mbm_make_white_list(mbm_context_t *ctx);
++/* clean white lists on all PKs*/
++extern void mbm_clean_white_lists(mbm_context_t *ctx);
++
++/* load white list to all PKs from the file in setList\ */
++extern int mbm_set_white_list(mbm_context_t *ctx);
+ 
+ #endif /* _MBM_TASK_MODBUS_H_ */
+diff -Nru a/test_set_addr.c b/test_set_addr.c
+--- a/test_set_addr.c	2012-05-10 17:21:21.000000000 +0300
++++ b/test_set_addr.c	2012-08-14 18:57:49.000000000 +0300
+@@ -1,5 +1,5 @@
+-//#define _XOPEN_SOURCE /* glibc2 needs this */
+ //#include <time.h>
++//extern char *strptime(const char *s, const char *format, struct tm *tm);
+ 
+ #include <stdio.h>
+ #include <errno.h>
+@@ -7,8 +7,6 @@
+ #include <unistd.h>
+ #include <stdlib.h>
+ 
+-//int usleep(useconds_t usec); /*TODO: _XOPEN_SOURCE makes the declaration unavailable?? */
+-
+ #include <modbus/modbus.h>
+ #include "danfoss.h"
+ 

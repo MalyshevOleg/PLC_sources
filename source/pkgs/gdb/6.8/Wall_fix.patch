@@ -1,0 +1,168 @@
+--- a/gdb/cli/cli-cmds.c
++++ b/gdb/cli/cli-cmds.c
+@@ -320,7 +320,9 @@
+ {
+   if (args)
+     error (_("The \"pwd\" command does not take an argument: %s"), args);
+-  getcwd (gdb_dirbuf, sizeof (gdb_dirbuf));
++  if (! getcwd (gdb_dirbuf, sizeof (gdb_dirbuf)))
++    error (_("Error finding name of working directory: %s"),
++           safe_strerror (errno));
+ 
+   if (strcmp (gdb_dirbuf, current_directory) != 0)
+     printf_unfiltered (_("Working directory %s\n (canonically %s).\n"),
+--- a/gdb/mi/mi-cmd-env.c
++++ b/gdb/mi/mi-cmd-env.c
+@@ -78,7 +78,10 @@
+      
+   /* Otherwise the mi level is 2 or higher.  */
+ 
+-  getcwd (gdb_dirbuf, sizeof (gdb_dirbuf));
++  if (! getcwd (gdb_dirbuf, sizeof (gdb_dirbuf)))
++    error (_("mi_cmd_env_pwd: error finding name of working directory: %s"),
++           safe_strerror (errno));
++
+   ui_out_field_string (uiout, "cwd", gdb_dirbuf);
+ 
+   return MI_CMD_DONE;
+--- a/gdb/main.c
++++ b/gdb/main.c
+@@ -188,9 +188,6 @@
+   line[0] = '\0';		/* Terminate saved (now empty) cmd line */
+   instream = stdin;
+ 
+-  getcwd (gdb_dirbuf, sizeof (gdb_dirbuf));
+-  current_directory = gdb_dirbuf;
+-
+   gdb_stdout = stdio_fileopen (stdout);
+   gdb_stderr = stdio_fileopen (stderr);
+   gdb_stdlog = gdb_stderr;	/* for moment */
+@@ -199,6 +196,15 @@
+   gdb_stdtargerr = gdb_stderr;	/* for moment */
+   gdb_stdtargin = gdb_stdin;	/* for moment */
+ 
++  if (! getcwd (gdb_dirbuf, sizeof (gdb_dirbuf)))
++    /* Don't use *_filtered or warning() (which relies on
++       current_target) until after initialize_all_files(). */
++    fprintf_unfiltered (gdb_stderr,
++                        _("%s: warning: error finding working directory: %s\n"),
++                        argv[0], safe_strerror (errno));
++
++  current_directory = gdb_dirbuf;
++
+   /* Set the sysroot path.  */
+ #ifdef TARGET_SYSTEM_ROOT_RELOCATABLE
+   gdb_sysroot = make_relative_prefix (argv[0], BINDIR, TARGET_SYSTEM_ROOT);
+--- a/gdb/top.c
++++ b/gdb/top.c
+@@ -1628,9 +1628,6 @@
+ 
+   /* Run the init function of each source file */
+ 
+-  getcwd (gdb_dirbuf, sizeof (gdb_dirbuf));
+-  current_directory = gdb_dirbuf;
+-
+ #ifdef __MSDOS__
+   /* Make sure we return to the original directory upon exit, come
+      what may, since the OS doesn't do that for us.  */
+--- a/gdb/utils.c
++++ b/gdb/utils.c
+@@ -704,7 +704,13 @@
+ 	abort ();	/* NOTE: GDB has only three calls to abort().  */
+       default:
+ 	dejavu = 3;
+-	write (STDERR_FILENO, msg, sizeof (msg));
++        /* Newer GLIBC versions put the warn_unused_result attribute
++           on write, but this is one of those rare cases where
++           ignoring the return value is correct.  Casting to (void)
++           does not fix this problem.  This is the solution suggested
++           at http://gcc.gnu.org/bugzilla/show_bug.cgi?id=25509.  */
++	if (write (STDERR_FILENO, msg, sizeof (msg)) != sizeof (msg))
++          abort ();
+ 	exit (1);
+       }
+   }
+--- a/gdb/ui-file.c
++++ b/gdb/ui-file.c
+@@ -481,7 +481,8 @@
+   if (stdio->magic != &stdio_file_magic)
+     internal_error (__FILE__, __LINE__,
+ 		    _("stdio_file_write: bad magic number"));
+-  fwrite (buf, length_buf, 1, stdio->file);
++  if (fwrite (buf, length_buf, 1, stdio->file) != 1)
++    error ("stdio_file_write: %s", safe_strerror (errno));
+ }
+ 
+ static void
+@@ -491,7 +492,8 @@
+   if (stdio->magic != &stdio_file_magic)
+     internal_error (__FILE__, __LINE__,
+ 		    _("stdio_file_fputs: bad magic number"));
+-  fputs (linebuffer, stdio->file);
++  if (fputs (linebuffer, stdio->file) == EOF)
++    error ("stdio_file_fputs: %s", safe_strerror (errno));
+ }
+ 
+ static int
+--- a/gdb/inflow.c
++++ b/gdb/inflow.c
+@@ -509,6 +509,16 @@
+   inferior_thisrun_terminal = ttyname;
+ }
+ 
++static void
++check_syscall (const char *msg, int result)
++{
++  if (result < 0)
++    {
++      print_sys_errmsg (msg, errno);
++      _exit (1);
++    }
++}
++
+ void
+ new_tty (void)
+ {
+@@ -535,27 +545,23 @@
+ 
+   /* Now open the specified new terminal.  */
+   tty = open (inferior_thisrun_terminal, O_RDWR | O_NOCTTY);
+-  if (tty == -1)
+-    {
+-      print_sys_errmsg (inferior_thisrun_terminal, errno);
+-      _exit (1);
+-    }
++  check_syscall (inferior_thisrun_terminal, tty);
+ 
+   /* Avoid use of dup2; doesn't exist on all systems.  */
+   if (tty != 0)
+     {
+       close (0);
+-      dup (tty);
++      check_syscall ("dup'ing tty into fd 0", dup (tty));
+     }
+   if (tty != 1)
+     {
+       close (1);
+-      dup (tty);
++      check_syscall ("dup'ing tty into fd 1", dup (tty));
+     }
+   if (tty != 2)
+     {
+       close (2);
+-      dup (tty);
++      check_syscall ("dup'ing tty into fd 2", dup (tty));
+     }
+   if (tty > 2)
+     close (tty);
+--- gdb-6.8.orig/gdb/eval.c	2009-08-02 03:25:20.000000000 +0200
++++ gdb-6.8/gdb/eval.c	2009-08-02 03:53:39.000000000 +0200
+@@ -1656,6 +1656,8 @@
+ 	if (nargs != ndimensions)
+ 	  error (_("Wrong number of subscripts"));
+ 
++        memset(&subscript_array, 0, sizeof(subscript_array));
++
+ 	/* Now that we know we have a legal array subscript expression 
+ 	   let us actually find out where this element exists in the array. */
+ 

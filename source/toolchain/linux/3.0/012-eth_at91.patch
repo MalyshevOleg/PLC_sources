@@ -1,0 +1,310 @@
+diff -uNr linux-3.0/arch/arm/mach-at91/board-owen-plc304.c linux-3.0-my/arch/arm/mach-at91/board-owen-plc304.c
+--- linux-3.0/arch/arm/mach-at91/board-owen-plc304.c	2013-09-25 09:27:03.224109440 +0400
++++ linux-3.0-my/arch/arm/mach-at91/board-owen-plc304.c	2013-09-25 11:24:53.788118716 +0400
+@@ -145,7 +145,7 @@
+ 	{	/* DataFlash card */
+ 		.modalias	= "mtd_dataflash",
+ 		.chip_select	= 3,
+-		.max_speed_hz	= 15 * 1000 * 1000,
++		.max_speed_hz	= 10 * 1000 * 1000,
+ 	}
+ #endif
+ };
+diff -uNr linux-3.0/drivers/net/arm/at91_ether.c linux-3.0-my/drivers/net/arm/at91_ether.c
+--- linux-3.0/drivers/net/arm/at91_ether.c	2013-09-25 09:27:03.224109440 +0400
++++ linux-3.0-my/drivers/net/arm/at91_ether.c	2013-09-25 12:22:15.724114248 +0400
+@@ -45,11 +45,9 @@
+ 
+ #define LINK_POLL_INTERVAL	(HZ)
+ 
+-#ifdef CONFIG_OWEN_PHY_WATCHDOG
+ static int wdt_timeout = CONFIG_OWEN_PHY_WATCHDOG_TIMEOUT;
+ module_param(wdt_timeout, int, 0);
+ MODULE_PARM_DESC(wdt_timeout, "PHY hangup detection watchdog timeout");
+-#endif
+ 
+ /* ..................................................................... */
+ 
+@@ -263,10 +261,11 @@
+ /*
+  * Initialize and enable the PHY interrupt for link-state changes
+  */
+-static void enable_phyirq_req(struct net_device *dev, int req)
++static void enable_phyirq(struct net_device *dev)
+ {
+ 	struct at91_private *lp = netdev_priv(dev);
+ 	unsigned int dsintr, irq_number;
++	int status;
+ 
+ 	irq_number = lp->board_data.phy_irq_pin;
+ 	if (!irq_number) {
+@@ -278,13 +277,10 @@
+ 		return;
+ 	}
+ 
+-	if (req) {
+-		int status;
+-		status = request_irq(irq_number, at91ether_phy_interrupt, 0, dev->name, dev);
+-		if (status) {
+-			printk(KERN_ERR "at91_ether: PHY IRQ %d request failed - status %d!\n", irq_number, status);
+-			return;
+-		}
++	status = request_irq(irq_number, at91ether_phy_interrupt, 0, dev->name, dev);
++	if (status) {
++		printk(KERN_ERR "at91_ether: PHY IRQ %d request failed - status %d!\n", irq_number, status);
++		return;
+ 	}
+ 
+ 	spin_lock_irq(&lp->lock);
+@@ -331,11 +327,6 @@
+ 	spin_unlock_irq(&lp->lock);
+ }
+ 
+-static void enable_phyirq(struct net_device *dev)
+-{
+-	enable_phyirq_req(dev, 1);
+-}
+-
+ /*
+  * Disable the PHY interrupt
+  */
+@@ -424,19 +415,14 @@
+ }
+ #endif
+ 
+-#ifdef CONFIG_OWEN_PHY_WATCHDOG
+-static void reset_phy_hard(struct net_device *dev)
+-{
+-	struct at91_private *lp = netdev_priv(dev);
++static void update_mac_address(struct net_device *dev);
++static void at91ether_start(struct net_device *dev);
+ 
+-	gpio_set_value(lp->board_data.phy_rst_pin, 0);
+-	udelay(500); /* Datasheet says 50 us is enough but it doesn't work */
+-	gpio_set_value(lp->board_data.phy_rst_pin, 1);
+ 
+-	/* re-enable PHY irq config
+-	* delay before using MII: testing showed that MII is not operable yet after even mdelay(10) */
+-	mdelay(50);
+-	enable_phyirq_req(dev, 0);
++#ifdef CONFIG_OWEN_PHY_WATCHDOG
++static void at91ether_feed_wdt_wstep2(struct at91_private *lp)// 10 ms
++{
++	mod_timer(&lp->watchdog_timer, jiffies + msecs_to_jiffies(10));
+ }
+ 
+ static void at91ether_feed_watchdog(struct at91_private *lp)
+@@ -444,18 +430,108 @@
+ 	mod_timer(&lp->watchdog_timer, jiffies + (HZ) * wdt_timeout);
+ }
+ 
++static struct net_device_stats *at91ether_stats(struct net_device *dev);
++
++
++static int mod_reset_step2=0;
++
+ static void at91ether_watchdog(unsigned long dev_id)
+ {
+ 	struct net_device *dev = (struct net_device *) dev_id;
+ 	struct at91_private *lp = netdev_priv(dev);
++	unsigned long ctl;
+ 
++	
+ 	if (netif_running(dev))
+ 	{
+-		/* Perform reset */
+-		printk(KERN_INFO DRV_NAME " %s: PHY hang up detected, performing reset\n", dev->name);
+-		reset_phy_hard(dev);
+-	}
++		if(mod_reset_step2)
++		{ // Продолжение шага 2 - снимаем ногу ресет  - т.е GPIO в 1
++			mod_reset_step2=0;
++			gpio_set_value(lp->board_data.phy_rst_pin, 1);
++
++			spin_lock_irq(&lp->lock);
++
++			/* Perform reset */
++			printk(KERN_ALERT DRV_NAME " %s: No i/o detected, performing HW reset\n", dev->name);
++			ctl = at91_emac_read(AT91_EMAC_CTL);
++			at91_emac_write(AT91_EMAC_CTL, ctl & ~(AT91_EMAC_TE | AT91_EMAC_RE));
++    	
++			/* Disable PHY interrupt */
++			//disable_phyirq(dev);
++
++			/* Disable MAC interrupts */
++			at91_emac_write(AT91_EMAC_IDR, AT91_EMAC_RCOM | AT91_EMAC_RBNA
++				| AT91_EMAC_TUND | AT91_EMAC_RTRY | AT91_EMAC_TCOM
++				| AT91_EMAC_ROVR | AT91_EMAC_ABT);
++
++
++			clk_disable(lp->ether_clk);		/* Disable Peripheral clock */
++
++			clk_enable(lp->ether_clk);		/* Re-enable Peripheral clock */
++
++			/* Clear internal statistics */
++			ctl = at91_emac_read(AT91_EMAC_CTL);
++			at91_emac_write(AT91_EMAC_CTL, ctl | AT91_EMAC_CSR);
++
++			/* Update the MAC address (incase user has changed it) */
++			update_mac_address(dev);
++
++		/* Enable PHY interrupt */
++		    //enable_phyirq(dev);
++
++		/* Enable MAC interrupts */
++			at91_emac_write(AT91_EMAC_IER, AT91_EMAC_RCOM | AT91_EMAC_RBNA
++				| AT91_EMAC_TUND | AT91_EMAC_RTRY | AT91_EMAC_TCOM
++				| AT91_EMAC_ROVR | AT91_EMAC_ABT);
++
++		/* Determine current link speed */
++			enable_mdi();
++			update_linkspeed(dev, 0);
++			disable_mdi();
++
++			at91ether_start(dev);
++
++		/* Disable Receiver and Transmitter */
++
++			spin_unlock_irq(&lp->lock);
++		}
++		else
++		{ // Начальный шаг 
++    		    at91ether_stats(dev);
++
++		    int have_to_restart=(dev->stats.rx_packets ==lp->old_rx_packets) &&	(dev->stats.tx_packets ==lp->old_tx_packets);
++//		    printk(KERN_ALERT DRV_NAME " Old packs r: %d t:%d , New packs r:%d t:%d\n",lp->old_rx_packets,lp->old_tx_packets,dev->stats.rx_packets,dev->stats.tx_packets);
++
++		    lp->old_rx_packets=dev->stats.rx_packets;
++		    lp->old_tx_packets=dev->stats.tx_packets;
++		    
++		    if(have_to_restart)
++		    { // Шаг 1 - снимаем ногу
++			mod_reset_step2=1;
++			gpio_set_value(lp->board_data.phy_rst_pin, 0);
++    			at91ether_feed_wdt_wstep2(lp);
++    			return;
++		    }
++		} // end else
++
++	} // end if net run
+         at91ether_feed_watchdog(lp);
++
++		
++}
++
++static void reset_phy_hard(struct net_device *dev)
++{
++	struct at91_private *lp = netdev_priv(dev);
++
++	gpio_set_value(lp->board_data.phy_rst_pin, 0);
++	udelay(500); /* Datasheet says 50 us is enough but it doesn't work */
++	gpio_set_value(lp->board_data.phy_rst_pin, 1);
++
++	/* re-enable PHY irq config
++	* delay before using MII: testing showed that MII is not operable yet after even mdelay(10) */
++	mdelay(50);
++	//enable_phyirq_req(dev, 0);
+ }
+ 
+ /* echo "1" > /sys/class/../ethX/phy_reset  (used in rc.net while configuring IP dynamically)*/
+@@ -467,6 +543,7 @@
+ 	}
+ 	return count;
+ }
++
+ static DEVICE_ATTR(reset_phy, S_IWUSR, NULL, reset_phy_write);
+ #endif /* CONFIG_OWEN_PHY_WATCHDOG */
+ 
+@@ -855,6 +932,8 @@
+ 	netif_start_queue(dev);
+ 
+ #ifdef CONFIG_OWEN_PHY_WATCHDOG
++	gpio_request(lp->board_data.phy_rst_pin, "ethernet_phy");
++	gpio_direction_output(lp->board_data.phy_rst_pin, 1);
+ 	at91ether_feed_watchdog(lp);
+ #endif /* CONFIG_OWEN_PHY_WATCHDOG */
+ 	return 0;
+@@ -871,6 +950,7 @@
+ #ifdef CONFIG_OWEN_PHY_WATCHDOG
+ 	/* Disable watchdog timer */
+ 	del_timer_sync(&lp->watchdog_timer);
++	gpio_free(lp->board_data.phy_rst_pin);
+ #endif
+ 
+ 	/* Disable Receiver and Transmitter */
+@@ -1013,16 +1093,12 @@
+ 
+ 	if (intstatus & AT91_EMAC_RCOM)		/* Receive complete */
+ 	{
+-#ifdef CONFIG_OWEN_PHY_WATCHDOG
+ 		at91ether_feed_watchdog(lp);
+-#endif
+ 		at91ether_rx(dev);
+ 	}
+ 
+ 	if (intstatus & AT91_EMAC_TCOM) {	/* Transmit complete */
+-#ifdef CONFIG_OWEN_PHY_WATCHDOG
+ 		at91ether_feed_watchdog(lp);
+-#endif
+ 		/* The TCOM bit is set even if the transmission failed. */
+ 		if (intstatus & (AT91_EMAC_TUND | AT91_EMAC_RTRY))
+ 			dev->stats.tx_errors += 1;
+@@ -1223,13 +1299,6 @@
+ 	init_timer(&lp->watchdog_timer);
+ 	lp->watchdog_timer.data = (unsigned long)dev;
+ 	lp->watchdog_timer.function = at91ether_watchdog;
+-
+-	gpio_request(lp->board_data.phy_rst_pin, "ethernet_phy");
+-	gpio_direction_output(lp->board_data.phy_rst_pin, 1);
+-
+-	if (sysfs_create_file(&dev->dev.kobj, &dev_attr_reset_phy.attr)) {
+-		dev_warn(&dev->dev, "failed to register PHY reset interface\n");
+-	}
+ #endif /* CONFIG_OWEN_PHY_WATCHDOG */
+ 
+ #ifdef CONFIG_OWEN_PHY_DUMP_REGISTERS
+@@ -1334,11 +1403,6 @@
+ 	sysfs_remove_file(&dev->dev.kobj, &dev_attr_at91_phy_registers.attr);
+ #endif /* CONFIG_OWEN_PHY_DUMP_REGISTERS */
+ 
+-#ifdef CONFIG_OWEN_PHY_WATCHDOG
+-	sysfs_remove_file(&dev->dev.kobj, &dev_attr_reset_phy.attr);
+-	gpio_free(lp->board_data.phy_rst_pin);
+-#endif
+-
+ 	if (lp->board_data.phy_irq_pin >= NR_AIC_IRQS)
+ 		gpio_free(lp->board_data.phy_irq_pin);
+ 
+diff -uNr linux-3.0/drivers/net/arm/at91_ether.h linux-3.0-my/drivers/net/arm/at91_ether.h
+--- linux-3.0/drivers/net/arm/at91_ether.h	2013-09-25 09:27:03.224109440 +0400
++++ linux-3.0-my/drivers/net/arm/at91_ether.h	2013-09-25 09:16:10.724082059 +0400
+@@ -90,6 +90,8 @@
+ 	char recv_buf[MAX_RX_DESCR][MAX_RBUFF_SZ];	/* must be on long boundary */
+ };
+ 
++//#define CONFIG_OWEN_PHY_WATCHDOG_TIMEOUT 5
++
+ struct at91_private
+ {
+ 	struct mii_if_info mii;			/* ethtool support */
+@@ -104,6 +106,8 @@
+ 	struct timer_list check_timer;		/* Poll link status */
+ #ifdef CONFIG_OWEN_PHY_WATCHDOG
+ 	struct timer_list watchdog_timer;	/* Watchdog timer for resetting PHY hangup */
++	unsigned long old_rx_packets;	        /*           */
++	unsigned long old_tx_packets;	        /*           */
+ #endif /* CONFIG_OWEN_PHY_WATCHDOG */
+ 
+ 	/* Transmit */
+diff -uNr linux-3.0/drivers/video/omap2/displays/panel-variscite.c linux-3.0-my/drivers/video/omap2/displays/panel-variscite.c
+--- linux-3.0/drivers/video/omap2/displays/panel-variscite.c	2013-09-25 09:27:03.224109440 +0400
++++ linux-3.0-my/drivers/video/omap2/displays/panel-variscite.c	2013-09-25 09:17:35.726605535 +0400
+@@ -35,7 +35,7 @@
+ 		.x_res = 800,
+ 		.y_res = 480,
+ 
+-		.pixel_clock	= 28000,
++		.pixel_clock	= 28800,
+ 
+ 		.hsw		= 28,
+ 		.hfp		= 29,

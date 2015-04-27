@@ -1,0 +1,1176 @@
+The attached patch adds support for the ARMv6-M architecture, as implemented 
+on the Cortex-M1 core.  This is a subset of the ARMv6 architecture that 
+implements only Thumb state.
+
+The only slightly hairy part is the software floating pont routines.  The 
+existing code is mostly written in ARM (or Thumb-2) assembly, so is not 
+suitable for this core.  Writing a Thumb-1 implementation would be a lot of 
+work for uncertain gain, so I've used the (glibc-derived) softfp code.  This 
+mostly just works, with a small hack in arm.h to suppress these routines on 
+conventional ARM targets.
+
+Tested on arm-none-eabi.
+Applied to svn trunk.
+
+Paul
+
+2008-03-03  Paul Brook  <paul@codesourcery.com>
+
+	gcc/
+	* config.gcc: Add arm/t-arm-softfp and soft-fp/t-softfp to arm
+	configs.  Add new --with-arch options.
+	* config/arm/t-arm-softfp: New file.
+	* config/arm/elf.h: Disable soft-fp routines on everything except
+	ARMv6-M.
+	* config/arm/ieee754-df.S: Rename L_* to L_arm_*.
+	* config/arm/ieee754-sf.S: Ditto.
+	* config/arm/t-arm-elf: Ditto.
+	* config/arm/arm.c (FL_FOR_ARCH6M): Define.
+	(all_architectures): Add armv6-m.
+	(arm_output_mi_thunk): Add TARGET_THUMB1_ONLY thunks.
+	* config/arm/lib1funcs.asm: Add __ARM_ARCH_6M__ conditionals.
+	Include bpabi-v6m.S.
+	* config/arm/arm.h (TARGET_THUMB1_ONLY): Define.
+	(ARM_DECLARE_FUNCTION_NAME): Handle Thumb-1 only thunks.
+	* config/arm/sfp-machine.h: New file.
+	* config/arm/bpabi-v6m.S: New file.
+	* config/arm/arm-cores.def: Add cortex-m1.
+	* config/arm/arm-tune.md: Regenerate.
+	* config/arm/libunwind.S: Add ARMv6-M implementation.
+	* config/arm/bpabi.h: Add renames for soft-float routines.
+	* doc/invoke.texi: Document -mcpu=cortex-m1 and -march=armv6-m.
+
+Index: gcc/config.gcc
+===================================================================
+--- a/gcc/config.gcc	(revision 132774)
++++ b/gcc/config.gcc	(working copy)
+@@ -750,6 +750,7 @@ arm*-*-linux*)			# ARM GNU/Linux with EL
+ 	    ;;
+ 	esac
+ 	tm_file="$tm_file arm/aout.h arm/arm.h"
++	tmake_file="${tmake_file} arm/t-arm-softfp soft-fp/t-softfp"
+ 	;;
+ arm*-*-uclinux*)		# ARM ucLinux
+ 	tm_file="dbxelf.h elfos.h arm/unknown-elf.h arm/elf.h arm/linux-gas.h arm/uclinux-elf.h arm/uclinux-elf.h"
+@@ -766,10 +767,12 @@ arm*-*-uclinux*)		# ARM ucLinux
+ 	    default_use_cxa_atexit=yes
+ 	esac
+ 	tm_file="$tm_file arm/aout.h arm/arm.h"
++	tmake_file="${tmake_file} arm/t-arm-softfp soft-fp/t-softfp"
+ 	;;
+ arm*-*-ecos-elf)
+ 	tm_file="dbxelf.h elfos.h arm/unknown-elf.h arm/elf.h arm/aout.h arm/arm.h arm/ecos-elf.h"
+ 	tmake_file="arm/t-arm arm/t-arm-elf"
++	tmake_file="${tmake_file} arm/t-arm-softfp soft-fp/t-softfp"
+ 	;;
+ arm*-*-eabi* | arm*-*-symbianelf* )
+ 	# The BPABI long long divmod functions return a 128-bit value in
+@@ -791,14 +794,17 @@ arm*-*-eabi* | arm*-*-symbianelf* )
+ 	  ;;
+ 	esac
+ 	tm_file="${tm_file} arm/aout.h arm/arm.h"
++	tmake_file="${tmake_file} arm/t-arm-softfp soft-fp/t-softfp"
+ 	;;
+ arm*-*-rtems*)
+ 	tm_file="dbxelf.h elfos.h arm/unknown-elf.h arm/elf.h arm/aout.h arm/arm.h arm/rtems-elf.h rtems.h"
+ 	tmake_file="arm/t-arm arm/t-arm-elf t-rtems arm/t-rtems"
++	tmake_file="${tmake_file} arm/t-arm-softfp soft-fp/t-softfp"
+ 	;;
+ arm*-*-elf | ep9312-*-elf)
+ 	tm_file="dbxelf.h elfos.h arm/unknown-elf.h arm/elf.h arm/aout.h arm/arm.h"
+ 	tmake_file="arm/t-arm arm/t-arm-elf"
++	tmake_file="${tmake_file} arm/t-arm-softfp soft-fp/t-softfp"
+ 	;;
+ arm*-wince-pe*)
+ 	tm_file="arm/semi.h arm/aout.h arm/arm.h arm/coff.h dbxcoff.h arm/pe.h arm/wince-pe.h"
+@@ -815,6 +821,7 @@ arm-*-pe*)
+ arm*-*-kaos*)
+ 	tm_file="dbxelf.h elfos.h arm/unknown-elf.h arm/elf.h arm/aout.h arm/arm.h kaos.h arm/kaos-arm.h"
+ 	tmake_file="arm/t-arm arm/t-arm-elf"
++	tmake_file="${tmake_file} arm/t-arm-softfp soft-fp/t-softfp"
+ 	;;
+ avr-*-rtems*)
+ 	tm_file="avr/avr.h dbxelf.h avr/rtems.h rtems.h"
+@@ -2877,7 +2884,8 @@ case "${target}" in
+ 		case "$with_arch" in
+ 		"" \
+ 		| armv[23456] | armv2a | armv3m | armv4t | armv5t \
+-		| armv5te | armv6j |armv6k | armv6z | armv6zk \
++		| armv5te | armv6j |armv6k | armv6z | armv6zk | armv6-m \
++		| armv7 | armv7-a | armv7-r | armv7-m \
+ 		| iwmmxt | ep9312)
+ 			# OK
+ 			;;
+Index: gcc/config/arm/t-arm-softfp
+===================================================================
+--- a/gcc/config/arm/t-arm-softfp	(revision 0)
++++ b/gcc/config/arm/t-arm-softfp	(revision 0)
+@@ -0,0 +1,11 @@
++softfp_float_modes := sf df
++softfp_int_modes := si di
++softfp_extensions := sfdf
++softfp_truncations := dfsf
++softfp_machine_header := arm/sfp-machine.h
++softfp_exclude_libgcc2 := y
++softfp_wrap_start := '\#ifdef __ARM_ARCH_6M__'
++softfp_wrap_end := '\#endif'
++
++# softfp seems to be missing a whole bunch of prototypes.
++TARGET_LIBGCC2_CFLAGS += -Wno-missing-prototypes
+Index: gcc/config/arm/elf.h
+===================================================================
+--- a/gcc/config/arm/elf.h	(revision 132774)
++++ b/gcc/config/arm/elf.h	(working copy)
+@@ -1,7 +1,7 @@
+ /* Definitions of target machine for GNU compiler.
+    For ARM with ELF obj format.
+-   Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2004, 2005, 2007
+-   Free Software Foundation, Inc.
++   Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2004, 2005, 2007,
++   2008 Free Software Foundation, Inc.
+    Contributed by Philip Blundell <philb@gnu.org> and
+    Catherine Moore <clm@cygnus.com>
+    
+@@ -145,3 +145,17 @@
+     }							\
+   while (0)
+ 
++/* Horrible hack: We want to prevent some libgcc routines being included
++   for some multilibs.  */
++#ifndef __ARM_ARCH_6M__
++#undef L_fixdfsi
++#undef L_fixunsdfsi
++#undef L_truncdfsf2
++#undef L_fixsfsi
++#undef L_fixunssfsi
++#undef L_floatdidf
++#undef L_floatdisf
++#undef L_floatundidf
++#undef L_floatundisf
++#endif
++
+Index: gcc/config/arm/ieee754-df.S
+===================================================================
+--- a/gcc/config/arm/ieee754-df.S	(revision 132774)
++++ b/gcc/config/arm/ieee754-df.S	(working copy)
+@@ -1,6 +1,6 @@
+ /* ieee754-df.S double-precision floating point support for ARM
+ 
+-   Copyright (C) 2003, 2004, 2005, 2007  Free Software Foundation, Inc.
++   Copyright (C) 2003, 2004, 2005, 2007, 2008  Free Software Foundation, Inc.
+    Contributed by Nicolas Pitre (nico@cam.org)
+ 
+    This file is free software; you can redistribute it and/or modify it
+@@ -56,7 +56,7 @@
+ #endif
+ 
+ 
+-#ifdef L_negdf2
++#ifdef L_arm_negdf2
+ 
+ ARM_FUNC_START negdf2
+ ARM_FUNC_ALIAS aeabi_dneg negdf2
+@@ -70,7 +70,7 @@ ARM_FUNC_ALIAS aeabi_dneg negdf2
+ 
+ #endif
+ 
+-#ifdef L_addsubdf3
++#ifdef L_arm_addsubdf3
+ 
+ ARM_FUNC_START aeabi_drsub
+ 
+@@ -603,7 +603,7 @@ LSYM(f0_ret):
+ 
+ #endif /* L_addsubdf3 */
+ 
+-#ifdef L_muldivdf3
++#ifdef L_arm_muldivdf3
+ 
+ ARM_FUNC_START muldf3
+ ARM_FUNC_ALIAS aeabi_dmul muldf3
+@@ -1103,7 +1103,7 @@ LSYM(Ldv_s):
+ 
+ #endif /* L_muldivdf3 */
+ 
+-#ifdef L_cmpdf2
++#ifdef L_arm_cmpdf2
+ 
+ @ Note: only r0 (return value) and ip are clobbered here.
+ 
+@@ -1271,7 +1271,7 @@ ARM_FUNC_START	aeabi_dcmpgt
+ 
+ #endif /* L_cmpdf2 */
+ 
+-#ifdef L_unorddf2
++#ifdef L_arm_unorddf2
+ 
+ ARM_FUNC_START unorddf2
+ ARM_FUNC_ALIAS aeabi_dcmpun unorddf2
+@@ -1297,7 +1297,7 @@ ARM_FUNC_ALIAS aeabi_dcmpun unorddf2
+ 
+ #endif /* L_unorddf2 */
+ 
+-#ifdef L_fixdfsi
++#ifdef L_arm_fixdfsi
+ 
+ ARM_FUNC_START fixdfsi
+ ARM_FUNC_ALIAS aeabi_d2iz fixdfsi
+@@ -1339,7 +1339,7 @@ ARM_FUNC_ALIAS aeabi_d2iz fixdfsi
+ 
+ #endif /* L_fixdfsi */
+ 
+-#ifdef L_fixunsdfsi
++#ifdef L_arm_fixunsdfsi
+ 
+ ARM_FUNC_START fixunsdfsi
+ ARM_FUNC_ALIAS aeabi_d2uiz fixunsdfsi
+@@ -1377,7 +1377,7 @@ ARM_FUNC_ALIAS aeabi_d2uiz fixunsdfsi
+ 
+ #endif /* L_fixunsdfsi */
+ 
+-#ifdef L_truncdfsf2
++#ifdef L_arm_truncdfsf2
+ 
+ ARM_FUNC_START truncdfsf2
+ ARM_FUNC_ALIAS aeabi_d2f truncdfsf2
+Index: gcc/config/arm/arm.c
+===================================================================
+--- a/gcc/config/arm/arm.c	(revision 132774)
++++ b/gcc/config/arm/arm.c	(working copy)
+@@ -1,6 +1,6 @@
+ /* Output routines for GCC for ARM.
+    Copyright (C) 1991, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+-   2002, 2003, 2004, 2005, 2006, 2007 Free Software Foundation, Inc.
++   2002, 2003, 2004, 2005, 2006, 2007, 2008 Free Software Foundation, Inc.
+    Contributed by Pieter `Tiggr' Schoenmakers (rcpieter@win.tue.nl)
+    and Martin Simmons (@harleqn.co.uk).
+    More major hacks by Richard Earnshaw (rearnsha@arm.com).
+@@ -460,6 +460,7 @@ static int thumb_call_reg_needed;
+ #define FL_FOR_ARCH6Z	FL_FOR_ARCH6
+ #define FL_FOR_ARCH6ZK	FL_FOR_ARCH6K
+ #define FL_FOR_ARCH6T2	(FL_FOR_ARCH6 | FL_THUMB2)
++#define FL_FOR_ARCH6M	(FL_FOR_ARCH6 & ~FL_NOTM)
+ #define FL_FOR_ARCH7	(FL_FOR_ARCH6T2 &~ FL_NOTM)
+ #define FL_FOR_ARCH7A	(FL_FOR_ARCH7 | FL_NOTM)
+ #define FL_FOR_ARCH7R	(FL_FOR_ARCH7A | FL_DIV)
+@@ -632,6 +633,7 @@ static const struct processors all_archi
+   {"armv6z",  arm1176jzs, "6Z",  FL_CO_PROC |             FL_FOR_ARCH6Z, NULL},
+   {"armv6zk", arm1176jzs, "6ZK", FL_CO_PROC |             FL_FOR_ARCH6ZK, NULL},
+   {"armv6t2", arm1156t2s, "6T2", FL_CO_PROC |             FL_FOR_ARCH6T2, NULL},
++  {"armv6-m", cortexm1,	  "6M",				  FL_FOR_ARCH6M, NULL},
+   {"armv7",   cortexa8,	  "7",	 FL_CO_PROC |		  FL_FOR_ARCH7, NULL},
+   {"armv7-a", cortexa8,	  "7A",	 FL_CO_PROC |		  FL_FOR_ARCH7A, NULL},
+   {"armv7-r", cortexr4,	  "7R",	 FL_CO_PROC |		  FL_FOR_ARCH7R, NULL},
+@@ -17639,12 +17641,23 @@ arm_output_mi_thunk (FILE *file, tree th
+                     ? 1 : 0);
+   if (mi_delta < 0)
+     mi_delta = - mi_delta;
+-  /* When generating 16-bit thumb code, thunks are entered in arm mode.  */
++
+   if (TARGET_THUMB1)
+     {
+       int labelno = thunk_label++;
+       ASM_GENERATE_INTERNAL_LABEL (label, "LTHUMBFUNC", labelno);
+-      fputs ("\tldr\tr12, ", file);
++      /* Thunks are entered in arm mode when avaiable.  */
++      if (TARGET_THUMB1_ONLY)
++	{
++	  /* push r3 so we can use it as a temporary.  */
++	  /* TODO: Omit this save if r3 is not used.  */
++	  fputs ("\tpush {r3}\n", file);
++	  fputs ("\tldr\tr3, ", file);
++	}
++      else
++	{
++	  fputs ("\tldr\tr12, ", file);
++	}
+       assemble_name (file, label);
+       fputc ('\n', file);
+       if (flag_pic)
+@@ -17658,29 +17671,63 @@ arm_output_mi_thunk (FILE *file, tree th
+ 
+ 	     Note that we have "+ 1" because some versions of GNU ld
+ 	     don't set the low bit of the result for R_ARM_REL32
+-	     relocations against thumb function symbols.  */
++	     relocations against thumb function symbols.
++	     On ARMv6M this is +4, not +8.  */
+ 	  ASM_GENERATE_INTERNAL_LABEL (labelpc, "LTHUNKPC", labelno);
+ 	  assemble_name (file, labelpc);
+ 	  fputs (":\n", file);
+-	  fputs ("\tadd\tr12, pc, r12\n", file);
++	  if (TARGET_THUMB1_ONLY)
++	    {
++	      /* This is 2 insns after the start of the thunk, so we know it
++	         is 4-byte aligned.  */
++	      fputs ("\tadd\tr3, pc, r3\n", file);
++	      fputs ("\tmov r12, r3\n", file);
++	    }
++	  else
++	    fputs ("\tadd\tr12, pc, r12\n", file);
+ 	}
++      else if (TARGET_THUMB1_ONLY)
++	fputs ("\tmov r12, r3\n", file);
+     }
+-  /* TODO: Use movw/movt for large constants when available.  */
+-  while (mi_delta != 0)
++  if (TARGET_THUMB1_ONLY)
+     {
+-      if ((mi_delta & (3 << shift)) == 0)
+-        shift += 2;
+-      else
+-        {
+-          asm_fprintf (file, "\t%s\t%r, %r, #%d\n",
+-                       mi_op, this_regno, this_regno,
+-                       mi_delta & (0xff << shift));
+-          mi_delta &= ~(0xff << shift);
+-          shift += 8;
+-        }
++      if (mi_delta > 255)
++	{
++	  fputs ("\tldr\tr3, ", file);
++	  assemble_name (file, label);
++	  fputs ("+4\n", file);
++	  asm_fprintf (file, "\t%s\t%r, %r, r3\n",
++		       mi_op, this_regno, this_regno);
++	}
++      else if (mi_delta != 0)
++	{
++	  asm_fprintf (file, "\t%s\t%r, %r, #%d\n",
++		       mi_op, this_regno, this_regno,
++		       mi_delta);
++	}
++    }
++  else
++    {
++      /* TODO: Use movw/movt for large constants when available.  */
++      while (mi_delta != 0)
++	{
++	  if ((mi_delta & (3 << shift)) == 0)
++	    shift += 2;
++	  else
++	    {
++	      asm_fprintf (file, "\t%s\t%r, %r, #%d\n",
++			   mi_op, this_regno, this_regno,
++			   mi_delta & (0xff << shift));
++	      mi_delta &= ~(0xff << shift);
++	      shift += 8;
++	    }
++	}
+     }
+   if (TARGET_THUMB1)
+     {
++      if (TARGET_THUMB1_ONLY)
++	fputs ("\tpop\t{r3}\n", file);
++
+       fprintf (file, "\tbx\tr12\n");
+       ASM_OUTPUT_ALIGN (file, 2);
+       assemble_name (file, label);
+@@ -17699,6 +17746,9 @@ arm_output_mi_thunk (FILE *file, tree th
+       else
+ 	/* Output ".word .LTHUNKn".  */
+ 	assemble_integer (XEXP (DECL_RTL (function), 0), 4, BITS_PER_WORD, 1);
++
++      if (TARGET_THUMB1_ONLY && mi_delta > 255)
++	assemble_integer (GEN_INT(mi_delta), 4, BITS_PER_WORD, 1);
+     }
+   else
+     {
+Index: gcc/config/arm/lib1funcs.asm
+===================================================================
+--- a/gcc/config/arm/lib1funcs.asm	(revision 132774)
++++ b/gcc/config/arm/lib1funcs.asm	(working copy)
+@@ -1,7 +1,7 @@
+ @ libgcc routines for ARM cpu.
+ @ Division routines, written by Richard Earnshaw, (rearnsha@armltd.co.uk)
+ 
+-/* Copyright 1995, 1996, 1998, 1999, 2000, 2003, 2004, 2005, 2007
++/* Copyright 1995, 1996, 1998, 1999, 2000, 2003, 2004, 2005, 2007, 2008
+    Free Software Foundation, Inc.
+ 
+ This file is free software; you can redistribute it and/or modify it
+@@ -94,7 +94,8 @@ Boston, MA 02110-1301, USA.  */
+ 
+ #if defined(__ARM_ARCH_6__) || defined(__ARM_ARCH_6J__) \
+ 	|| defined(__ARM_ARCH_6K__) || defined(__ARM_ARCH_6Z__) \
+-	|| defined(__ARM_ARCH_6ZK__) || defined(__ARM_ARCH_6T2__)
++	|| defined(__ARM_ARCH_6ZK__) || defined(__ARM_ARCH_6T2__) \
++	|| defined(__ARM_ARCH_6M__)
+ # define __ARM_ARCH__ 6
+ #endif
+ 
+@@ -367,6 +368,9 @@ _L__\name:		
+ 
+ #else /* !(__INTERWORKING_STUBS__ || __thumb2__) */
+ 
++#ifdef __ARM_ARCH_6M__
++#define EQUIV .thumb_set
++#else
+ .macro	ARM_FUNC_START name
+ 	.text
+ 	.globl SYM (__\name)
+@@ -379,6 +383,7 @@ SYM (__\name):
+ .macro  ARM_CALL name
+ 	bl	__\name
+ .endm
++#endif
+ 
+ #endif
+ 
+@@ -391,6 +396,7 @@ SYM (__\name):
+ #endif
+ .endm
+ 
++#ifndef __ARM_ARCH_6M__
+ .macro	ARM_FUNC_ALIAS new old
+ 	.globl	SYM (__\new)
+ 	EQUIV	SYM (__\new), SYM (__\old)
+@@ -398,6 +404,7 @@ SYM (__\name):
+ 	.set	SYM (_L__\new), SYM (_L__\old)
+ #endif
+ .endm
++#endif
+ 
+ #ifdef __thumb__
+ /* Register aliases.  */
+@@ -1256,8 +1263,8 @@ LSYM(Lover12):
+ #endif /* L_call_via_rX */
+ 
+ /* Don't bother with the old interworking routines for Thumb-2.  */
+-/* ??? Maybe only omit these on v7m.  */
+-#ifndef __thumb2__
++/* ??? Maybe only omit these on "m" variants.  */
++#if !defined(__thumb2__) && !defined(__ARM_ARCH_6M__)
+ 
+ #if defined L_interwork_call_via_rX
+ 
+@@ -1387,7 +1394,11 @@ LSYM(Lchange_\register):
+ #endif /* Arch supports thumb.  */
+ 
+ #ifndef __symbian__
++#ifndef __ARM_ARCH_6M__
+ #include "ieee754-df.S"
+ #include "ieee754-sf.S"
+ #include "bpabi.S"
+-#endif /* __symbian__ */
++#else /* __ARM_ARCH_6M__ */
++#include "bpabi-v6m.S"
++#endif /* __ARM_ARCH_6M__ */
++#endif /* !__symbian__ */
+Index: gcc/config/arm/arm.h
+===================================================================
+--- a/gcc/config/arm/arm.h	(revision 132774)
++++ b/gcc/config/arm/arm.h	(working copy)
+@@ -1,6 +1,7 @@
+ /* Definitions of target machine for GNU compiler, for ARM.
+    Copyright (C) 1991, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
+-   2001, 2002, 2003, 2004, 2005, 2006, 2007 Free Software Foundation, Inc.
++   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008
++   Free Software Foundation, Inc.
+    Contributed by Pieter `Tiggr' Schoenmakers (rcpieter@win.tue.nl)
+    and Martin Simmons (@harleqn.co.uk).
+    More major hacks by Richard Earnshaw (rearnsha@arm.com)
+@@ -207,6 +208,8 @@ extern void (*arm_lang_output_object_att
+ #define TARGET_32BIT			(TARGET_ARM || arm_arch_thumb2)
+ /* 32-bit Thumb-2 code.  */
+ #define TARGET_THUMB2			(TARGET_THUMB && arm_arch_thumb2)
++/* Thumb-1 only.  */
++#define TARGET_THUMB1_ONLY		(TARGET_THUMB1 && !arm_arch_notm)
+ 
+ /* The following two macros concern the ability to execute coprocessor
+    instructions for VFPv3 or NEON.  TARGET_VFP3 is currently only ever
+@@ -2397,7 +2400,8 @@ extern int making_const_table;
+       if (TARGET_THUMB) 				\
+         {						\
+           if (is_called_in_ARM_mode (DECL)		\
+-	      || (TARGET_THUMB1 && current_function_is_thunk))	\
++	      || (TARGET_THUMB1 && !TARGET_THUMB1_ONLY	\
++		  && current_function_is_thunk))	\
+             fprintf (STREAM, "\t.code 32\n") ;		\
+           else if (TARGET_THUMB1)			\
+            fprintf (STREAM, "\t.code\t16\n\t.thumb_func\n") ;	\
+Index: gcc/config/arm/sfp-machine.h
+===================================================================
+--- a/gcc/config/arm/sfp-machine.h	(revision 0)
++++ b/gcc/config/arm/sfp-machine.h	(revision 0)
+@@ -0,0 +1,96 @@
++#define _FP_W_TYPE_SIZE		32
++#define _FP_W_TYPE		unsigned long
++#define _FP_WS_TYPE		signed long
++#define _FP_I_TYPE		long
++
++#define _FP_MUL_MEAT_S(R,X,Y)				\
++  _FP_MUL_MEAT_1_wide(_FP_WFRACBITS_S,R,X,Y,umul_ppmm)
++#define _FP_MUL_MEAT_D(R,X,Y)				\
++  _FP_MUL_MEAT_2_wide(_FP_WFRACBITS_D,R,X,Y,umul_ppmm)
++#define _FP_MUL_MEAT_Q(R,X,Y)				\
++  _FP_MUL_MEAT_4_wide(_FP_WFRACBITS_Q,R,X,Y,umul_ppmm)
++
++#define _FP_DIV_MEAT_S(R,X,Y)	_FP_DIV_MEAT_1_loop(S,R,X,Y)
++#define _FP_DIV_MEAT_D(R,X,Y)	_FP_DIV_MEAT_2_udiv(D,R,X,Y)
++#define _FP_DIV_MEAT_Q(R,X,Y)	_FP_DIV_MEAT_4_udiv(Q,R,X,Y)
++
++#define _FP_NANFRAC_S		((_FP_QNANBIT_S << 1) - 1)
++#define _FP_NANFRAC_D		((_FP_QNANBIT_D << 1) - 1), -1
++#define _FP_NANFRAC_Q		((_FP_QNANBIT_Q << 1) - 1), -1, -1, -1
++#define _FP_NANSIGN_S		0
++#define _FP_NANSIGN_D		0
++#define _FP_NANSIGN_Q		0
++
++#define _FP_KEEPNANFRACP 1
++
++/* Someone please check this.  */
++#define _FP_CHOOSENAN(fs, wc, R, X, Y, OP)			\
++  do {								\
++    if ((_FP_FRAC_HIGH_RAW_##fs(X) & _FP_QNANBIT_##fs)		\
++	&& !(_FP_FRAC_HIGH_RAW_##fs(Y) & _FP_QNANBIT_##fs))	\
++      {								\
++	R##_s = Y##_s;						\
++	_FP_FRAC_COPY_##wc(R,Y);				\
++      }								\
++    else							\
++      {								\
++	R##_s = X##_s;						\
++	_FP_FRAC_COPY_##wc(R,X);				\
++      }								\
++    R##_c = FP_CLS_NAN;						\
++  } while (0)
++
++#define	__LITTLE_ENDIAN	1234
++#define	__BIG_ENDIAN	4321
++
++#if defined __ARMEB__
++# define __BYTE_ORDER __BIG_ENDIAN
++#else
++# define __BYTE_ORDER __LITTLE_ENDIAN
++#endif
++
++
++/* Define ALIASNAME as a strong alias for NAME.  */
++# define strong_alias(name, aliasname) _strong_alias(name, aliasname)
++# define _strong_alias(name, aliasname) \
++  extern __typeof (name) aliasname __attribute__ ((alias (#name)));
++
++#ifdef __ARM_EABI__
++/* Rename functions to their EABI names.  */
++/* The comparison functions need wrappers for EABI semantics, so
++   leave them unmolested.  */
++#define __negsf2	__aeabi_fneg
++#define __subsf3	__aeabi_fsub
++#define __addsf3	__aeabi_fadd
++#define __floatunsisf	__aeabi_ui2f
++#define __floatsisf	__aeabi_i2f
++#define __floatundisf	__aeabi_ul2f
++#define __floatdisf	__aeabi_l2f
++#define __mulsf3	__aeabi_fmul
++#define __divsf3	__aeabi_fdiv
++#define __unordsf2	__aeabi_fcmpun
++#define __fixsfsi	__aeabi_f2iz
++#define __fixunssfsi	__aeabi_f2uiz
++#define __fixsfdi	__aeabi_f2lz
++#define __fixunssfdi	__aeabi_f2ulz
++#define __floatdisf	__aeabi_l2f
++
++#define __negdf2	__aeabi_dneg
++#define __subdf3	__aeabi_dsub
++#define __adddf3	__aeabi_dadd
++#define __floatunsidf	__aeabi_ui2d
++#define __floatsidf	__aeabi_i2d
++#define __extendsfdf2	__aeabi_f2d
++#define __truncdfsf2	__aeabi_d2f
++#define __floatundidf	__aeabi_ul2d
++#define __floatdidf	__aeabi_l2d
++#define __muldf3	__aeabi_dmul
++#define __divdf3	__aeabi_ddiv
++#define __unorddf2	__aeabi_dcmpun
++#define __fixdfsi	__aeabi_d2iz
++#define __fixunsdfsi	__aeabi_d2uiz
++#define __fixdfdi	__aeabi_d2lz
++#define __fixunsdfdi	__aeabi_d2ulz
++#define __floatdidf	__aeabi_l2d
++
++#endif /* __ARM_EABI__ */
+Index: gcc/config/arm/bpabi-v6m.S
+===================================================================
+--- a/gcc/config/arm/bpabi-v6m.S	(revision 0)
++++ b/gcc/config/arm/bpabi-v6m.S	(revision 0)
+@@ -0,0 +1,280 @@
++/* Miscellaneous BPABI functions.  ARMv6M implementation
++
++   Copyright (C) 2006, 2008  Free Software Foundation, Inc.
++   Contributed by CodeSourcery.
++
++   This file is free software; you can redistribute it and/or modify it
++   under the terms of the GNU General Public License as published by the
++   Free Software Foundation; either version 2, or (at your option) any
++   later version.
++
++   In addition to the permissions in the GNU General Public License, the
++   Free Software Foundation gives you unlimited permission to link the
++   compiled version of this file into combinations with other programs,
++   and to distribute those combinations without any restriction coming
++   from the use of this file.  (The General Public License restrictions
++   do apply in other respects; for example, they cover modification of
++   the file, and distribution when not linked into a combine
++   executable.)
++
++   This file is distributed in the hope that it will be useful, but
++   WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program; see the file COPYING.  If not, write to
++   the Free Software Foundation, 51 Franklin Street, Fifth Floor,
++   Boston, MA 02110-1301, USA.  */
++
++#ifdef __ARMEB__
++#define xxh r0
++#define xxl r1
++#define yyh r2
++#define yyl r3
++#else
++#define xxh r1
++#define xxl r0
++#define yyh r3
++#define yyl r2
++#endif	
++	
++#ifdef L_aeabi_lcmp
++
++FUNC_START aeabi_lcmp
++	cmp	xxh, yyh
++	beq	1f
++	bgt	2f
++	mov	r0, #1
++	neg	r0, r0
++	RET
++2:
++	mov	r0, #1
++	RET
++1:
++	sub	r0, xxl, yyl
++	beq	1f
++	bhi	2f
++	mov	r0, #1
++	neg	r0, r0
++	RET
++2:
++	mov	r0, #1
++1:
++	RET
++	FUNC_END aeabi_lcmp
++
++#endif /* L_aeabi_lcmp */
++	
++#ifdef L_aeabi_ulcmp
++
++FUNC_START aeabi_ulcmp
++	cmp	xxh, yyh
++	bne	1f
++	sub	r0, xxl, yyl
++	beq	2f
++1:
++	bcs	1f
++	mov	r0, #1
++	neg	r0, r0
++	RET
++1:
++	mov	r0, #1
++2:
++	RET
++	FUNC_END aeabi_ulcmp
++
++#endif /* L_aeabi_ulcmp */
++
++#ifdef L_aeabi_ldivmod
++
++FUNC_START aeabi_ldivmod
++	push {r0, r1}
++	mov r0, sp
++	push {r0, lr}
++	ldr r0, [sp, #8]
++	bl SYM(__gnu_ldivmod_helper)
++	ldr r3, [sp, #4]
++	mov lr, r3
++	add sp, sp, #8
++	pop {r2, r3}
++	RET
++	FUNC_END aeabi_ldivmod
++
++#endif /* L_aeabi_ldivmod */
++
++#ifdef L_aeabi_uldivmod
++
++FUNC_START aeabi_uldivmod
++	push {r0, r1}
++	mov r0, sp
++	push {r0, lr}
++	ldr r0, [sp, #8]
++	bl SYM(__gnu_uldivmod_helper)
++	ldr r3, [sp, #4]
++	mov lr, r3
++	add sp, sp, #8
++	pop {r2, r3}
++	RET
++	FUNC_END aeabi_uldivmod
++	
++#endif /* L_aeabi_uldivmod */
++
++#ifdef L_arm_addsubsf3
++
++FUNC_START aeabi_frsub
++
++      push	{r4, lr}
++      mov	r4, #1
++      lsl	r4, #31
++      eor	r0, r0, r4
++      bl	__aeabi_fadd
++      pop	{r4, pc}
++
++      FUNC_END aeabi_frsub
++
++#endif /* L_arm_addsubsf3 */
++
++#ifdef L_arm_cmpsf2
++
++FUNC_START aeabi_cfrcmple
++
++	mov	ip, r0
++	mov	r0, r1
++	mov	r1, ip
++	b	6f
++
++FUNC_START aeabi_cfcmpeq
++FUNC_ALIAS aeabi_cfcmple aeabi_cfcmpeq
++
++	@ The status-returning routines are required to preserve all
++	@ registers except ip, lr, and cpsr.
++6:	push	{r0, r1, r2, r3, r4, lr}
++	bl	__lesf2
++	@ Set the Z flag correctly, and the C flag unconditionally.
++	cmp	r0, #0
++	@ Clear the C flag if the return value was -1, indicating
++	@ that the first operand was smaller than the second.
++	bmi 1f
++	mov	r1, #0
++	cmn	r0, r1
++1:
++	pop	{r0, r1, r2, r3, r4, pc}
++
++	FUNC_END aeabi_cfcmple
++	FUNC_END aeabi_cfcmpeq
++	FUNC_END aeabi_cfrcmple
++
++FUNC_START	aeabi_fcmpeq
++
++	push	{r4, lr}
++	bl	__eqsf2
++	neg	r0, r0
++	add	r0, r0, #1
++	pop	{r4, pc}
++
++	FUNC_END aeabi_fcmpeq
++
++.macro COMPARISON cond, helper, mode=sf2
++FUNC_START	aeabi_fcmp\cond
++
++	push	{r4, lr}
++	bl	__\helper\mode
++	cmp	r0, #0
++	b\cond	1f
++	mov	r0, #0
++	pop	{r4, pc}
++1:
++	mov	r0, #1
++	pop	{r4, pc}
++
++	FUNC_END aeabi_fcmp\cond
++.endm
++
++COMPARISON lt, le
++COMPARISON le, le
++COMPARISON gt, ge
++COMPARISON ge, ge
++
++#endif /* L_arm_cmpsf2 */
++
++#ifdef L_arm_addsubdf3
++
++FUNC_START aeabi_drsub
++
++      push	{r4, lr}
++      mov	r4, #1
++      lsl	r4, #31
++      eor	xxh, xxh, r4
++      bl	__aeabi_dadd
++      pop	{r4, pc}
++
++      FUNC_END aeabi_drsub
++
++#endif /* L_arm_addsubdf3 */
++
++#ifdef L_arm_cmpdf2
++
++FUNC_START aeabi_cdrcmple
++
++	mov	ip, r0
++	mov	r0, r2
++	mov	r2, ip
++	mov	ip, r1
++	mov	r1, r3
++	mov	r3, ip
++	b	6f
++
++FUNC_START aeabi_cdcmpeq
++FUNC_ALIAS aeabi_cdcmple aeabi_cdcmpeq
++
++	@ The status-returning routines are required to preserve all
++	@ registers except ip, lr, and cpsr.
++6:	push	{r0, r1, r2, r3, r4, lr}
++	bl	__ledf2
++	@ Set the Z flag correctly, and the C flag unconditionally.
++	cmp	r0, #0
++	@ Clear the C flag if the return value was -1, indicating
++	@ that the first operand was smaller than the second.
++	bmi 1f
++	mov	r1, #0
++	cmn	r0, r1
++1:
++	pop	{r0, r1, r2, r3, r4, pc}
++
++	FUNC_END aeabi_cdcmple
++	FUNC_END aeabi_cdcmpeq
++	FUNC_END aeabi_cdrcmple
++
++FUNC_START	aeabi_dcmpeq
++
++	push	{r4, lr}
++	bl	__eqdf2
++	neg	r0, r0
++	add	r0, r0, #1
++	pop	{r4, pc}
++
++	FUNC_END aeabi_dcmpeq
++
++.macro COMPARISON cond, helper, mode=df2
++FUNC_START	aeabi_dcmp\cond
++
++	push	{r4, lr}
++	bl	__\helper\mode
++	cmp	r0, #0
++	b\cond	1f
++	mov	r0, #0
++	pop	{r4, pc}
++1:
++	mov	r0, #1
++	pop	{r4, pc}
++
++	FUNC_END aeabi_dcmp\cond
++.endm
++
++COMPARISON lt, le
++COMPARISON le, le
++COMPARISON gt, ge
++COMPARISON ge, ge
++
++#endif /* L_arm_cmpdf2 */
+Index: gcc/config/arm/arm-cores.def
+===================================================================
+--- a/gcc/config/arm/arm-cores.def	(revision 132774)
++++ b/gcc/config/arm/arm-cores.def	(working copy)
+@@ -1,5 +1,5 @@
+ /* ARM CPU Cores
+-   Copyright (C) 2003, 2005, 2006, 2007 Free Software Foundation, Inc.
++   Copyright (C) 2003, 2005, 2006, 2007, 2008 Free Software Foundation, Inc.
+    Written by CodeSourcery, LLC
+ 
+    This file is part of GCC.
+@@ -118,3 +118,4 @@ ARM_CORE("arm1156t2-s",	  arm1156t2s,	6T
+ ARM_CORE("cortex-a8",	  cortexa8,	7A,				 FL_LDSCHED, 9e)
+ ARM_CORE("cortex-r4",	  cortexr4,	7R,				 FL_LDSCHED, 9e)
+ ARM_CORE("cortex-m3",	  cortexm3,	7M,				 FL_LDSCHED, 9e)
++ARM_CORE("cortex-m1",	  cortexm1,	6M,				 FL_LDSCHED, 9e)
+Index: gcc/config/arm/arm-tune.md
+===================================================================
+--- a/gcc/config/arm/arm-tune.md	(revision 132774)
++++ b/gcc/config/arm/arm-tune.md	(working copy)
+@@ -1,5 +1,5 @@
+ ;; -*- buffer-read-only: t -*-
+ ;; Generated automatically by gentune.sh from arm-cores.def
+ (define_attr "tune"
+-	"arm2,arm250,arm3,arm6,arm60,arm600,arm610,arm620,arm7,arm7d,arm7di,arm70,arm700,arm700i,arm710,arm720,arm710c,arm7100,arm7500,arm7500fe,arm7m,arm7dm,arm7dmi,arm8,arm810,strongarm,strongarm110,strongarm1100,strongarm1110,arm7tdmi,arm7tdmis,arm710t,arm720t,arm740t,arm9,arm9tdmi,arm920,arm920t,arm922t,arm940t,ep9312,arm10tdmi,arm1020t,arm9e,arm946es,arm966es,arm968es,arm10e,arm1020e,arm1022e,xscale,iwmmxt,arm926ejs,arm1026ejs,arm1136js,arm1136jfs,arm1176jzs,arm1176jzfs,mpcorenovfp,mpcore,arm1156t2s,cortexa8,cortexr4,cortexm3"
++	"arm2,arm250,arm3,arm6,arm60,arm600,arm610,arm620,arm7,arm7d,arm7di,arm70,arm700,arm700i,arm710,arm720,arm710c,arm7100,arm7500,arm7500fe,arm7m,arm7dm,arm7dmi,arm8,arm810,strongarm,strongarm110,strongarm1100,strongarm1110,arm7tdmi,arm7tdmis,arm710t,arm720t,arm740t,arm9,arm9tdmi,arm920,arm920t,arm922t,arm940t,ep9312,arm10tdmi,arm1020t,arm9e,arm946es,arm966es,arm968es,arm10e,arm1020e,arm1022e,xscale,iwmmxt,arm926ejs,arm1026ejs,arm1136js,arm1136jfs,arm1176jzs,arm1176jzfs,mpcorenovfp,mpcore,arm1156t2s,cortexa8,cortexr4,cortexm3,cortexm1"
+ 	(const (symbol_ref "arm_tune")))
+Index: gcc/config/arm/libunwind.S
+===================================================================
+--- a/gcc/config/arm/libunwind.S	(revision 132774)
++++ b/gcc/config/arm/libunwind.S	(working copy)
+@@ -1,5 +1,5 @@
+ /* Support functions for the unwinder.
+-   Copyright (C) 2003, 2004, 2005, 2007  Free Software Foundation, Inc.
++   Copyright (C) 2003, 2004, 2005, 2007, 2008  Free Software Foundation, Inc.
+    Contributed by Paul Brook
+ 
+    This file is free software; you can redistribute it and/or modify it
+@@ -53,6 +53,119 @@
+ #endif
+ #endif
+ 
++#ifdef __ARM_ARCH_6M__
++
++/* r0 points to a 16-word block.  Upload these values to the actual core
++   state.  */
++FUNC_START restore_core_regs
++	mov r1, r0
++	add r1, r1, #52
++	ldmia r1!, {r3, r4, r5}
++	sub r3, r3, #4
++	mov ip, r3
++	str r5, [r3]
++	mov lr, r4
++	/* Restore r8-r11.  */
++	mov r1, r0
++	add r1, r1, #32
++	ldmia r1!, {r2, r3, r4, r5}
++	mov r8, r2
++	mov r9, r3
++	mov sl, r4
++	mov fp, r5
++	mov r1, r0
++	add r1, r1, #8
++	ldmia r1!, {r2, r3, r4, r5, r6, r7}
++	ldr r1, [r0, #4]
++	ldr r0, [r0]
++	mov sp, ip
++	pop {pc}
++	FUNC_END restore_core_regs
++	UNPREFIX restore_core_regs
++
++/* ARMV6M does not have coprocessors, so these should never be used.  */
++FUNC_START gnu_Unwind_Restore_VFP
++	RET
++
++/* Store VFR regsters d0-d15 to the address in r0.  */
++FUNC_START gnu_Unwind_Save_VFP
++	RET
++
++/* Load VFP registers d0-d15 from the address in r0.
++   Use this to load from FSTMD format.  */
++FUNC_START gnu_Unwind_Restore_VFP_D
++	RET
++
++/* Store VFP registers d0-d15 to the address in r0.
++   Use this to store in FLDMD format.  */
++FUNC_START gnu_Unwind_Save_VFP_D
++	RET
++
++/* Load VFP registers d16-d31 from the address in r0.
++   Use this to load from FSTMD (=VSTM) format.  Needs VFPv3.  */
++FUNC_START gnu_Unwind_Restore_VFP_D_16_to_31
++	RET
++
++/* Store VFP registers d16-d31 to the address in r0.
++   Use this to store in FLDMD (=VLDM) format.  Needs VFPv3.  */
++FUNC_START gnu_Unwind_Save_VFP_D_16_to_31
++	RET
++
++FUNC_START gnu_Unwind_Restore_WMMXD
++	RET
++
++FUNC_START gnu_Unwind_Save_WMMXD
++	RET
++
++FUNC_START gnu_Unwind_Restore_WMMXC
++	RET
++
++FUNC_START gnu_Unwind_Save_WMMXC
++	RET
++
++.macro  UNWIND_WRAPPER name nargs
++	FUNC_START \name
++	/* Create a phase2_vrs structure.  */
++	/* Save r0 in the PC slot so we can use it as a scratch register.  */
++	push {r0}
++	add r0, sp, #4
++	push {r0, lr} /* Push original SP and LR.  */
++	/* Make space for r8-r12.  */
++	sub sp, sp, #20
++	/* Save low registers.  */
++	push {r0, r1, r2, r3, r4, r5, r6, r7}
++	/* Save high registers.  */
++	add r0, sp, #32
++	mov r1, r8
++	mov r2, r9
++	mov r3, sl
++	mov r4, fp
++	mov r5, ip
++	stmia r0!, {r1, r2, r3, r4, r5}
++	/* Restore original low register values.  */
++	add r0, sp, #4
++	ldmia r0!, {r1, r2, r3, r4, r5}
++	/* Restore orginial r0.  */
++	ldr r0, [sp, #60]
++	str r0, [sp]
++	/* Demand-save flags, plus an extra word for alignment.  */
++	mov r3, #0
++	push {r2, r3}
++	/* Point r1 at the block.  Pass r[0..nargs) unchanged.  */
++	add r\nargs, sp, #4
++
++	bl SYM (__gnu\name)
++
++	ldr r3, [sp, #64]
++	add sp, sp, #72
++	bx r3
++
++	FUNC_END \name
++	UNPREFIX \name
++.endm
++
++#else /* !__ARM_ARCH_6M__ */
++
+ /* r0 points to a 16-word block.  Upload these values to the actual core
+    state.  */
+ ARM_FUNC_START restore_core_regs
+@@ -233,6 +346,8 @@ ARM_FUNC_START gnu_Unwind_Save_WMMXC
+ 	UNPREFIX \name
+ .endm
+ 
++#endif /* !__ARM_ARCH_6M__ */
++
+ UNWIND_WRAPPER _Unwind_RaiseException 1
+ UNWIND_WRAPPER _Unwind_Resume 1
+ UNWIND_WRAPPER _Unwind_Resume_or_Rethrow 1
+Index: gcc/config/arm/ieee754-sf.S
+===================================================================
+--- a/gcc/config/arm/ieee754-sf.S	(revision 132774)
++++ b/gcc/config/arm/ieee754-sf.S	(working copy)
+@@ -1,6 +1,6 @@
+ /* ieee754-sf.S single-precision floating point support for ARM
+ 
+-   Copyright (C) 2003, 2004, 2005, 2007  Free Software Foundation, Inc.
++   Copyright (C) 2003, 2004, 2005, 2007, 2008  Free Software Foundation, Inc.
+    Contributed by Nicolas Pitre (nico@cam.org)
+ 
+    This file is free software; you can redistribute it and/or modify it
+@@ -38,7 +38,7 @@
+  * if necessary without impacting performances.
+  */
+ 
+-#ifdef L_negsf2
++#ifdef L_arm_negsf2
+ 	
+ ARM_FUNC_START negsf2
+ ARM_FUNC_ALIAS aeabi_fneg negsf2
+@@ -51,7 +51,7 @@ ARM_FUNC_ALIAS aeabi_fneg negsf2
+ 
+ #endif
+ 
+-#ifdef L_addsubsf3
++#ifdef L_arm_addsubsf3
+ 
+ ARM_FUNC_START aeabi_frsub
+ 
+@@ -448,7 +448,7 @@ LSYM(f0_ret):
+ 
+ #endif /* L_addsubsf3 */
+ 
+-#ifdef L_muldivsf3
++#ifdef L_arm_muldivsf3
+ 
+ ARM_FUNC_START mulsf3
+ ARM_FUNC_ALIAS aeabi_fmul mulsf3
+@@ -795,7 +795,7 @@ LSYM(Ldv_s):
+ 
+ #endif /* L_muldivsf3 */
+ 
+-#ifdef L_cmpsf2
++#ifdef L_arm_cmpsf2
+ 
+ 	@ The return value in r0 is
+ 	@
+@@ -958,7 +958,7 @@ ARM_FUNC_START	aeabi_fcmpgt
+ 
+ #endif /* L_cmpsf2 */
+ 
+-#ifdef L_unordsf2
++#ifdef L_arm_unordsf2
+ 
+ ARM_FUNC_START unordsf2
+ ARM_FUNC_ALIAS aeabi_fcmpun unordsf2
+@@ -983,7 +983,7 @@ ARM_FUNC_ALIAS aeabi_fcmpun unordsf2
+ 
+ #endif /* L_unordsf2 */
+ 
+-#ifdef L_fixsfsi
++#ifdef L_arm_fixsfsi
+ 
+ ARM_FUNC_START fixsfsi
+ ARM_FUNC_ALIAS aeabi_f2iz fixsfsi
+@@ -1025,7 +1025,7 @@ ARM_FUNC_ALIAS aeabi_f2iz fixsfsi
+ 
+ #endif /* L_fixsfsi */
+ 
+-#ifdef L_fixunssfsi
++#ifdef L_arm_fixunssfsi
+ 
+ ARM_FUNC_START fixunssfsi
+ ARM_FUNC_ALIAS aeabi_f2uiz fixunssfsi
+Index: gcc/config/arm/t-arm-elf
+===================================================================
+--- a/gcc/config/arm/t-arm-elf	(revision 132774)
++++ b/gcc/config/arm/t-arm-elf	(working copy)
+@@ -1,10 +1,16 @@
+ LIB1ASMSRC = arm/lib1funcs.asm
++# For most CPUs we have an assembly soft-float implementations.
++# However this is not true for ARMv6M.  Here we want to use the soft-fp C
++# implementation.  The soft-fp code is only build for ARMv6M.  This pulls
++# in the asm implementation for other CPUs.
+ LIB1ASMFUNCS = _udivsi3 _divsi3 _umodsi3 _modsi3 _dvmd_tls _bb_init_func \
+ 	_call_via_rX _interwork_call_via_rX \
+ 	_lshrdi3 _ashrdi3 _ashldi3 \
+-	_negdf2 _addsubdf3 _muldivdf3 _cmpdf2 _unorddf2 _fixdfsi _fixunsdfsi \
+-	_truncdfsf2 _negsf2 _addsubsf3 _muldivsf3 _cmpsf2 _unordsf2 \
+-	_fixsfsi _fixunssfsi _floatdidf _floatdisf _floatundidf _floatundisf
++	_arm_negdf2 _arm_addsubdf3 _arm_muldivdf3 _arm_cmpdf2 _arm_unorddf2 \
++	_arm_fixdfsi _arm_fixunsdfsi \
++	_arm_truncdfsf2 _arm_negsf2 _arm_addsubsf3 _arm_muldivsf3 \
++	_arm_cmpsf2 _arm_unordsf2 _arm_fixsfsi _arm_fixunssfsi \
++	_arm_floatdidf _arm_floatdisf _arm_floatundidf _arm_floatundisf
+ 
+ MULTILIB_OPTIONS     = marm/mthumb
+ MULTILIB_DIRNAMES    = arm thumb
+Index: gcc/config/arm/bpabi.h
+===================================================================
+--- a/gcc/config/arm/bpabi.h	(revision 132774)
++++ b/gcc/config/arm/bpabi.h	(working copy)
+@@ -1,5 +1,5 @@
+ /* Configuration file for ARM BPABI targets.
+-   Copyright (C) 2004, 2005, 2007
++   Copyright (C) 2004, 2005, 2007, 2008
+    Free Software Foundation, Inc.
+    Contributed by CodeSourcery, LLC   
+ 
+@@ -99,6 +99,21 @@
+ #define DECLARE_LIBRARY_RENAMES RENAME_LIBRARY (floatdisf, l2f)
+ #endif
+ 
++/* These renames are needed on ARMv6M.  Other targets get them from
++   assembly routines.  */
++#ifdef L_fixunsdfsi
++#define DECLARE_LIBRARY_RENAMES RENAME_LIBRARY (fixunsdfsi, d2uiz)
++#endif
++#ifdef L_fixunssfsi
++#define DECLARE_LIBRARY_RENAMES RENAME_LIBRARY (fixunssfsi, f2uiz)
++#endif
++#ifdef L_floatundidf
++#define DECLARE_LIBRARY_RENAMES RENAME_LIBRARY (floatundidf, ul2d)
++#endif
++#ifdef L_floatundisf
++#define DECLARE_LIBRARY_RENAMES RENAME_LIBRARY (floatundisf, ul2f)
++#endif
++
+ /* The BPABI requires that we always use an out-of-line implementation
+    of RTTI comparison, even if the target supports weak symbols,
+    because the same object file might be used on a target that does
+

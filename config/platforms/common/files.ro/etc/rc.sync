@@ -1,0 +1,108 @@
+#!/bin/sh
+
+disp=0
+if [ "$1" != "" ]; then
+	disp=1
+fi
+
+# try for 5 seconds
+lock_attempts=50
+lock_usleep=100000
+lock_dir=/tmp/fs_sync_lock
+# Assume that after 10 secs any backup should finish!
+# so if lock is still present it means the backup was interrupted w/o cleanup
+lock_expire_sec=10
+
+CODESYS_CONF_DIR=/mnt/ufs/root/CoDeSysSP
+CODESYS_CONFIGS="CoDeSysSP.cfg "
+
+fs_sync_lock()
+{
+	# cleanup invalid/expired lock
+	while [ -d $lock_dir ]; do
+		lock_time=`date '+%s' -r $lock_dir`
+		lock_time_expire=$((lock_time + $lock_expire_sec))
+		now_time=`date '+%s'`
+		
+		if [ $lock_time -gt $now_time ]; then
+			# invalid
+			rmdir $lock_dir
+			[ $disp -ne 0 ] && echo "fs_sync: invalid lock removed"
+			break;
+		fi
+		
+		if [ $now_time -gt $lock_time_expire ]; then
+			# expired
+			rmdir $lock_dir
+			[ $disp -ne 0 ] && echo "fs_sync: expired lock removed"
+		fi
+		break;
+	done
+
+	attempts=$lock_attempts
+	while [ $attempts -gt 0 ]; do
+		#[ $disp -ne 0 ] && echo "fs_sync: try getting lock: attempts:$attempts"
+		mkdir $lock_dir 2> /dev/null
+		
+		if [ $? -eq 0 ]; then
+			#[ $disp -ne 0 ] && echo "fs_sync: lock acquired"
+			return 0
+		fi
+		
+		#[ $disp -ne 0 ] && echo "fs_sync: failed to acquire lock, sleep awhile"
+		usleep $lock_usleep
+		attempts=$((attempts - 1))
+	done
+	
+	return 1
+}
+
+# void
+fs_sync_unlock()
+{
+	rmdir $lock_dir 2> /dev/null
+}
+
+# Commit changes - the whole config:
+
+# - prevent simultaneous calls
+fs_sync_lock
+if [ $? -ne 0 ]; then
+	[ $disp -ne 0 ] && echo "fs_sync: failed to acquire lock, try again"
+	exit 1;
+fi
+
+
+# - backup existing nonzero CoDeSys's config files
+[ $disp -ne 0 ] && echo "fs_sync: preparing CoDeSys's configs for backup"
+mkdir -p /etc/CoDeSysSP
+for f in $CODESYS_CONFIGS
+do
+  if [ -s $CODESYS_CONF_DIR/$f ] ; then
+    cp $CODESYS_CONF_DIR/$f /etc/CoDeSysSP/
+  fi
+done
+
+# - make tar with all configs & sync FS
+[ $disp -ne 0 ] && echo -n "fs_sync: making configuration backup: "
+tar -cf /mnt/ufs/root/etc.tar -C /mnt/etcrw .
+r=$?
+[ $disp -ne 0 ] && (
+	if [ $r -eq 0 ]; then
+		echo "OK"
+	else
+		echo "FAIL"
+	fi
+)
+
+sync
+
+if [ "$1" != "2" ]; then
+    # - cleanup
+    [ $disp -ne 0 ] && echo "fs_sync: cleaning up"
+    rm -rf /etc/CoDeSysSP
+    fs_sync_unlock
+
+    exit 0
+fi
+

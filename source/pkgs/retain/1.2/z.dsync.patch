@@ -1,0 +1,102 @@
+Двоичные файлы retain-1.2-orig/rmsync и retain-1.2/rmsync различаются
+diff -uNr retain-1.2-orig/rmsync.c retain-1.2/rmsync.c
+--- retain-1.2-orig/rmsync.c	2013-03-12 20:23:11.171501663 +0400
++++ retain-1.2/rmsync.c	2013-03-12 21:21:58.437985605 +0400
+@@ -32,6 +32,8 @@
+ 		unsigned req_exit: 1;
+ 		
+ 		unsigned no_fiq_init: 1;
++		
++		unsigned o_dsync: 1;
+ 	} flags;
+ 
+ 	/* params */
+@@ -58,6 +60,7 @@
+ 		.req_exit = 0,
+ 		
+ 		.no_fiq_init = 0,
++		.o_dsync = 0,
+ 	},
+ 
+ 	/* params: default values */
+@@ -98,12 +101,13 @@
+ 	printf(
+ 	APP_NAME " v" APP_VERSION "\nSynchronize retain memory with its shadow buffer.\n"
+ 	"Usage:\n"
+-	"   " APP_NAME " [-c cfg_file] [-h] [-v] [-f flag]\n"
++	"   " APP_NAME " [-c cfg_file] [-h] [-v] [-f flag] [-s flag]\n"
+ 	"\n"
+ 	"   -c cfg_file    config file path-name (default: [rundir]/" APP_NAME ".cfg)\n"
+ 	"   -h             print this screen and exit\n"
+ 	"   -v x N         increase verbosity level (e.g. -v -v is verbosity level +2)\n"
+ 	"   -f flag        init FIQ or not (0 - do not init, default - init)\n"
++	"   -s flag        when flag=1 - open RETAIN_FILE with O_DSYNC option\n"
+ 	);
+ }
+ 
+@@ -138,7 +142,7 @@
+ 	int opt;
+ 	opterr = 0;
+ 	
+-	while ((opt = getopt(argc, argv, "c:hvf:")) != -1) {
++	while ((opt = getopt(argc, argv, "c:hvf:s:")) != -1) {
+ 		switch (opt) {
+ 		case 'c':
+ 			if (ctx.cfg_fname) {
+@@ -164,6 +168,10 @@
+ 		case 'f':
+ 			ctx.flags.no_fiq_init = !atoi(optarg);
+ 			break;
++
++		case 's':
++			ctx.flags.o_dsync = atoi(optarg);
++			break;
+ 			
+ 		case '?':
+ 			pr_err("option '%c' requires an argument\n", optopt);
+@@ -329,6 +337,9 @@
+ 		ctx.scan_chunk = ctx.retain_size;
+ 		pr_notice("use default scan chunk == whole size = %d\n", ctx.scan_chunk);
+ 	}
++	if (ctx.flags.o_dsync != 0) {
++		pr_notice("using O_DSYNC flag for %s write\n", ctx.retain_fname);
++	}
+ 	return 0;
+ }
+ 
+@@ -435,6 +446,7 @@
+ 	int count;
+ 	int rest;
+ 	int size;
++	int open_flags;
+ 	
+ 	struct stat sbuf;
+ 	if (stat(fname, &sbuf) == 0) {
+@@ -442,7 +454,11 @@
+ 		return -1;
+ 	}
+ 
+-	fd = open(fname, O_CREAT | O_WRONLY, 0660);
++	open_flags = 0;
++	if (ctx.flags.o_dsync != 0) {
++		open_flags = O_DSYNC;
++	}
++	fd = open(fname, O_CREAT | O_WRONLY | open_flags, 0660);
+ 	if (fd < 0) {
+ 		pr_err("can't create new retain memory file: '%s': %s\n", 
+ 			fname, strerror(errno));
+@@ -544,8 +560,13 @@
+ {
+ 	int retain_fd;
+ 	int r;
++	int open_flags;
+ 	
+-	retain_fd = open(ctx.retain_fname, O_WRONLY);
++	open_flags = 0;
++	if (ctx.flags.o_dsync != 0) {
++		open_flags = O_DSYNC;
++	}
++	retain_fd = open(ctx.retain_fname, O_WRONLY | open_flags);
+ 	if (retain_fd < 0) {
+ 		pr_err("failed to open retain memory interface:'%s'\n", 
+ 			ctx.retain_fname);

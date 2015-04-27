@@ -1,0 +1,46 @@
+diff -uNr v4l-utils-0.8.9-orig/Make.rules v4l-utils-0.8.9/Make.rules
+--- v4l-utils-0.8.9-orig/Make.rules	2013-09-24 12:28:44.842449750 +0400
++++ v4l-utils-0.8.9/Make.rules	2013-09-24 12:44:26.737211671 +0400
+@@ -2,7 +2,13 @@
+ 
+ # These ones can be overriden from the cmdline
+ 
+-CFLAGS := -g -O1
++LD     = $(CROSS_COMPILE)-ld
++GCC     = $(CROSS_COMPILE)-gcc
++CC     = $(CROSS_COMPILE)-gcc
++CXX     = $(CROSS_COMPILE)-g++
++AR     = $(CROSS_COMPILE)-ar
++
++CFLAGS := -g -O1 -I$(PWD)/build/src/jpeg-8d
+ CFLAGS += -Wall -Wpointer-arith
+ CXXFLAGS := $(CFLAGS)
+ CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
+@@ -17,8 +23,8 @@
+ # These ones should not be overriden from the cmdline
+ 
+ # Note the -I../.. this assumes all sources live in a 2 level dir hierarchy!
+-override CPPFLAGS += -I../../include -I../../lib/include -D_GNU_SOURCE -DV4L_UTILS_VERSION='"$(V4L_UTILS_VERSION)"'
+-override LDFLAGS += -L../../lib/libv4l1 -L../../lib/libv4l2 -L../../lib/libv4lconvert
++override CPPFLAGS += -I../../include  -I$(PKGSOURCE_DIR)/build/src/jpeg-8d -I./include -I../../lib/include -D_GNU_SOURCE -DV4L_UTILS_VERSION='"$(V4L_UTILS_VERSION)"'
++override LDFLAGS += -L../../lib/libv4l1 -L../../lib/libv4l2 -L../../lib/libv4lconvert -L$(PWD)/build/targetam35/jpeg-8d/build/.libs 
+ # This is the soname version
+ LIB_RELEASE = 0
+ 
+@@ -28,6 +34,7 @@
+ 	$(CC) -Wp,-MMD,"$*.d",-MQ,"$@",-MP -c $(CPPFLAGS) $(CFLAGS) -o $@ $<
+ 
+ %.o: %.cpp
++	echo $(PKGSOURCE_DIR) $(INCLUDE) $(PWD)
+ 	$(CXX) -Wp,-MMD,"$*.d",-MQ,"$@",-MP -c $(CPPFLAGS) $(CXXFLAGS) -o $@ $<
+ 
+ %.so:
+diff -uNr v4l-utils-0.8.9-orig/utils/Makefile v4l-utils-0.8.9/utils/Makefile
+--- v4l-utils-0.8.9-orig/utils/Makefile	2013-09-24 12:28:44.842449750 +0400
++++ v4l-utils-0.8.9/utils/Makefile	2013-09-24 12:30:38.737497559 +0400
+@@ -1,4 +1,4 @@
+-SUBDIRS=libv4l2util libmedia_dev decode_tm6000 keytable rds v4l2-compliance v4l2-ctl v4l2-dbg v4l2-sysfs-path xc3028-firmware dvb
++SUBDIRS=libv4l2util libmedia_dev decode_tm6000 keytable rds v4l2-compliance v4l2-ctl v4l2-dbg v4l2-sysfs-path xc3028-firmware
+ 
+ all install: 
+ 	@for i in $(SUBDIRS); do \

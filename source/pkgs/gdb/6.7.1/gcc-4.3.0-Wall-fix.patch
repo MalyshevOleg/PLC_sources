@@ -1,0 +1,11 @@
+--- gdb-6.7.1/gdb/symtab.c	2007-08-29 21:34:46.000000000 +0300
++++ gdb-6.7.x/gdb/symtab.c	2008-10-17 21:16:36.000000000 +0300
+@@ -2249,7 +2249,7 @@
+ struct symtab *
+ find_line_symtab (struct symtab *symtab, int line, int *index, int *exact_match)
+ {
+-  int exact;
++  int exact = 0;
+ 
+   /* BEST_INDEX and BEST_LINETABLE identify the smallest linenumber > LINE
+      so far seen.  */

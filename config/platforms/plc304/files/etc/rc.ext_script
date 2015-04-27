@@ -1,0 +1,55 @@
+#!/bin/bash
+#
+# testing for exist of dir of USB scsi devices
+#
+
+# Устройство сигнализирующее окончание скрипта
+data_signal_end_dev=/sys/class/gpio/gpio55/value
+
+#	# Каталог  
+#	prog_target=/mnt/ufs/root/CoDeSysSP
+
+#	# Название приложения
+#	# Пока затычка       =====================
+#	def_app_name=Application
+
+
+echo "start script"
+sleep 3
+
+for file in /mnt/ufs/media/sd*
+do
+	#echo $file
+	value=`echo $file| sed 's@/mnt/ufs/media/@@g'| xargs -0 echo "/dev/"| sed 's@ @@g'`
+	echo $value
+	if [ -b $value ] 
+	then
+		echo "yes dir = disk " $file
+		if [ -d $file/BOOT_SCRIPTS ]
+		then
+			echo "dirs_exists"
+			# Имя каталога откуда копировать программу 
+			prog_source=$file/BOOT_SCRIPTS
+			
+			#Запуск внешнего скрипта
+			if [ -x $prog_source/SCRIPTS_LIST.sh ] 
+				then
+				cd $prog_source
+				./SCRIPTS_LIST.sh $file
+			fi
+			# Конец
+			if [ -f $data_signal_end_dev ] ;
+				then
+				echo "1" > $data_signal_end_dev
+				sleep 2
+				echo "0" > $data_signal_end_dev
+			fi
+			exit 0
+		else
+			echo "scripts dirs not exists"
+		fi
+	else
+		echo "no dir = disk " $file
+		#echo "if need remove trash dirs remove # in next line"
+	fi
+done

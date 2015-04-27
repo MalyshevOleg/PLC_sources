@@ -1,0 +1,13 @@
+--- a/Makefile.in	2011-01-04 04:03:43.000000000 +0200
++++ b/Makefile.in	2012-03-27 18:57:16.000000000 +0300
+@@ -260,9 +260,7 @@
+ AUTOMAKE_OPTIONS = foreign 1.10
+ ACLOCAL_AMFLAGS = -I m4 -I sntp/libopts/m4
+ NULL = 
+-SUBDIRS = scripts include ElectricFence libntp sntp libparse ntpd \
+-	ntpdate ntpdc ntpq ntpsnmpd parseutil adjtimed clockstuff \
+-	kernel util $(NULL)
++SUBDIRS = scripts include libntp ntpdate sntp ntpd ntpq $(NULL)
+ DIST_SUBDIRS = \
+ 	scripts		\
+ 	include		\

@@ -1,0 +1,108 @@
+diff -Nru mtd-utils-1.3.1-orig/common.mk mtd-utils-1.3.1/common.mk
+--- mtd-utils-1.3.1-orig/common.mk	2010-01-15 19:12:24.000000000 +0200
++++ mtd-utils-1.3.1/common.mk	2010-06-29 21:31:00.000000000 +0300
+@@ -1,12 +1,13 @@
+ CC := $(CROSS)gcc
+ AR := $(CROSS)ar
+ RANLIB := $(CROSS)ranlib
++STRIP := $(CROSS)strip
+ 
+ # Stolen from Linux build system
+ try-run = $(shell set -e; ($(1)) >/dev/null 2>&1 && echo "$(2)" || echo "$(3)")
+ cc-option = $(call try-run, $(CC) $(1) -c -xc /dev/null -o /dev/null,$(1),$(2))
+ 
+-CFLAGS ?= -O2 -g
++CFLAGS ?= -Os
+ WFLAGS := -Wall \
+ 	$(call cc-option,-Wextra) \
+ 	$(call cc-option,-Wwrite-strings) \
+@@ -20,13 +21,14 @@
+ SBINDIR=$(EXEC_PREFIX)/sbin
+ MANDIR=$(PREFIX)/share/man
+ INCLUDEDIR=$(PREFIX)/include
++SRCDIR=.
+ 
+ ifndef BUILDDIR
+ ifeq ($(origin CROSS),undefined)
+-  BUILDDIR := $(PWD)
++  BUILDDIR := .
+ else
+ # Remove the trailing slash to make the directory name
+-  BUILDDIR := $(PWD)/$(CROSS:-=)
++  BUILDDIR := $(CROSS:-=)
+ endif
+ endif
+ override BUILDDIR := $(patsubst %/,%,$(BUILDDIR))
+@@ -39,23 +41,25 @@
+ 
+ all:: $(TARGETS) $(SUBDIRS_ALL)
+ 
++subdirs:: $(SUBDIRS_ALL)
++
+ clean:: $(SUBDIRS_CLEAN)
+ 	rm -f $(BUILDDIR)/*.o $(TARGETS) $(BUILDDIR)/.*.c.dep
+ 
+ install:: $(TARGETS) $(SUBDIRS_INSTALL)
+ 
+-%: %.o
+-	$(CC) $(CFLAGS) $(LDFLAGS) $(LDFLAGS_$(notdir $@)) -g -o $@ $^ $(LDLIBS) $(LDLIBS_$(notdir $@))
++$(BUILDDIR)/%: $(BUILDDIR)/%.o
++	$(CC) $(CFLAGS) $(LDFLAGS) $(LDFLAGS_$(notdir $@)) -o $@ $^ $(LDLIBS) $(LDLIBS_$(notdir $@))
+ 
+ $(BUILDDIR)/%.a:
+ 	$(AR) crv $@ $^
+ 	$(RANLIB) $@
+ 
+-$(BUILDDIR)/%.o: %.c
++$(BUILDDIR)/%.o: $(SRCDIR)/%.c
+ ifneq ($(BUILDDIR),$(CURDIR))
+ 	mkdir -p $(dir $@)
+ endif
+-	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $< -g -Wp,-MD,$(BUILDDIR)/.$(<F).dep
++	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $< -Wp,-MD,$(BUILDDIR)/.$(<F).dep
+ 
+ subdirs_%:
+ 	d=$(patsubst subdirs_%,%,$@); \
+diff -Nru mtd-utils-1.3.1-orig/Makefile mtd-utils-1.3.1/Makefile
+--- mtd-utils-1.3.1-orig/Makefile	2010-01-15 19:12:24.000000000 +0200
++++ mtd-utils-1.3.1/Makefile	2010-06-29 21:35:55.000000000 +0300
+@@ -1,8 +1,6 @@
+ 
+ # -*- sh -*-
+ 
+-CPPFLAGS += -I./include $(ZLIBCPPFLAGS) $(LZOCPPFLAGS)
+-
+ ifeq ($(WITHOUT_XATTR), 1)
+   CPPFLAGS += -DWITHOUT_XATTR
+ endif
+@@ -18,10 +16,14 @@
+ 	serve_image recv_image \
+ 	sumtool #jffs2reader
+ 
++HOSTTARGETS = $(BUILDDIR)/mkfs.jffs2 $(BUILDDIR)/mkfs.ubifs/mkfs.ubifs $(BUILDDIR)/ubi-utils/ubinize
++
+ SYMLINKS =
+ 
+ include common.mk
+ 
++CPPFLAGS += -I$(SRCDIR)/include $(ZLIBCPPFLAGS) $(LZOCPPFLAGS)
++
+ clean::
+ 	-rm -f $(SYMLINKS)
+ ifneq ($(BUILDDIR)/.git,)
+@@ -57,10 +59,12 @@
+ 
+ $(BUILDDIR)/fectest: $(BUILDDIR)/fectest.o $(BUILDDIR)/crc32.o $(BUILDDIR)/fec.o
+ 
+-
++install-host: ${HOSTTARGETS}
++	mkdir -p ${DESTDIR}/bin
++	$(STRIP) ${HOSTTARGETS}
++	install -m0755 ${HOSTTARGETS} ${DESTDIR}/bin/
+ 
+ install:: ${TARGETS}
+ 	mkdir -p ${DESTDIR}/${SBINDIR}
++	$(STRIP) ${TARGETS}
+ 	install -m 0755 ${TARGETS} ${DESTDIR}/${SBINDIR}/
+-	mkdir -p ${DESTDIR}/${MANDIR}/man1
+-	gzip -9c mkfs.jffs2.1 > ${DESTDIR}/${MANDIR}/man1/mkfs.jffs2.1.gz

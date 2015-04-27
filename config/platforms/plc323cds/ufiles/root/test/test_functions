@@ -1,0 +1,189 @@
+#!/bin/sh
+
+test_work_dir=/tmp
+init_data_file=$test_work_dir/test_data.bin
+
+eeprom_data_file0=$test_work_dir/eeprom.test0
+eeprom_data_file1=$test_work_dir/eeprom.test1
+
+serial_data_file=$test_work_dir/serial_out.test
+
+tmp_file=$test_work_dir/tmp_data
+
+#
+# Private functions (should not be called from outside)
+#
+
+# Generate base test data file
+init_test_data()
+{
+	if [ ! -f $init_data_file ]; then
+		for i in $(seq 1 11915); do
+			echo -en "\xAA\x92\xDB\x55\x24\x6D\xBD\x5A\x69\xCC\x33" >> $init_data_file
+		done
+		echo -en "\xAA\x92\xDB\x55\x24\x6D\xBD" >> $init_data_file
+	fi
+}
+
+#
+# Public functions
+#
+# Notes: 
+# * call setup_XXX_data() functions from the main script (instead of from test scripts), 
+#   one by one in order to prevent race conditions
+#
+
+# Generate two test data files for EEPROM test using base test data file
+setup_eeprom_test_data()
+{
+	if [ ! -f $eeprom_data_file0 -o ! -f $eeprom_data_file1 ]; then
+		echo -n "Setting up test data for EEPROM test.."
+		init_test_data
+		
+		if [ ! -f $eeprom_data_file0 ]; then
+			# use initial test data as 1st test data for eeprom test
+			ln $init_data_file $eeprom_data_file0
+		#else
+		#    echo "file0 exists"
+		fi
+
+		if [ ! -f $eeprom_data_file1 ]; then
+			# generate 2nd test file as data of the first shifted by one byte
+			# write 1023 bytes of the same sequence starting with 2nd byte
+			for i in $(seq 1 93); do
+				echo -en "\x92\xDB\x55\x24\x6D\xBD\x5A\x69\xCC\x33\xAA" >> $eeprom_data_file1
+			done
+			# append remaining 127K
+			dd if=$init_data_file of=$tmp_file bs=1024 count=127 skip=1 > /dev/null 2>&1
+			cat $tmp_file >> $eeprom_data_file1
+			rm $tmp_file
+			
+			# append last char
+			echo -en "\x5A" >> $eeprom_data_file1
+		#else
+		#    echo "file1 exists"
+		fi
+		echo "done"
+	fi
+}
+
+# Generate a test data file for RS232 and RS485 tests using base test data file 
+# args:
+# 1 - size in bytes no more than 128K (size of base test data file)
+#     (if size is greater the result file will be 128K size)
+setup_serial_test_data()
+{
+	_size=$1
+	_test_file=$serial_data_file
+	
+	if [ -f $_test_file ]; then
+		_exist_size=`stat -t $_test_file | awk '{print $2}'`
+		if [ $_size -eq $_exist_size ]; then
+			#echo "$_test_file exists and size is correct"
+			return
+		else
+			rm $_test_file
+		fi
+	fi
+	
+	echo -n "Setting up test data for RS232/485 tests.."
+	init_test_data
+		
+	# use 1K data file
+	_kbytes=$((_size/1024))
+	_bytes=$((_size-1024*$_kbytes))
+	echo -n "kbytes: $_kbytes, bytes: $_bytes.."
+	if [ $_kbytes -gt 0 ]; then
+		dd if=$init_data_file of=$_test_file bs=1024 count=$_kbytes > /dev/null 2>&1
+	fi
+	if [ $_bytes -gt 0 ]; then
+		_skip=$((_kbytes*1024))
+		dd if=$init_data_file of=$tmp_file bs=1 count=$_bytes skip=$_skip > /dev/null 2>&1
+		cat $tmp_file >> $_test_file
+		rm $tmp_file
+	fi
+	echo "done"
+}
+
+# Wait while pid is running or time is not elapsed.
+# If the time is elapsed and the pid is still running, kill the pid.
+# args:
+# 1 - pid to check
+# 2 - number of 100 msecs the specified pid should be killed after
+# So timeout = (n * 100) ms
+wait_pid_for_n100ms()
+{
+	_rc=0
+	_count=$2
+	
+	while [ 1 ]; do
+		# 'jobs -p' is slower
+		ps | awk '{print $1;}' | grep -q $1
+		if [ $? -ne 0 ]; then
+			# not running - ok, exit
+			#echo "--not running"
+			break
+		fi
+
+		# running - check counter
+		if [ $_count -le 0 ]; then
+			# if no more time left kill & exit
+			kill $1 > /dev/null 2>&1
+			#echo "--killed by TO"
+			_rc=1
+			break
+		fi
+
+		# otherwise, sleep and check again
+		usleep 100000
+		_count=$((_count-1))
+		#echo "--count=$_count"
+	done
+	return $_rc
+}
+
+# Wait until specified file got the speicifed size or time is elapsed
+# args:
+# 1 - file
+# 2 - size
+# 3 - number of 100ms periods to wait
+wait_file_size_for_n100ms()
+{
+	_rc=0
+	_count=$3
+	
+	while [ 1 ]; do
+		if [ -f $1 ]; then
+			_size=`stat -t $1 | awk '{print $2}'`
+			if [ $_size -ge $2 ]; then
+				# file is present and its size has grown to speicified
+				#echo "--file is OK"
+				break
+			fi
+		fi
+
+		# otherwise - wait?
+		if [ $_count -le 0 ]; then
+			# timeout elapsed
+			#echo "--exit by TO"
+			_rc=1
+			break
+		fi
+
+		# have more time - sleep and check again
+		usleep 100000
+		_count=$((_count-1))
+		#echo "--count=$_count"
+	done
+	return $_rc
+}
+
+# Print report on the number of successful and failed iterations to the specified file
+# args:
+# 1 - number of successes
+# 2 - number of losses
+# 3 - report file
+report_result()
+{
+	echo "success= $1 loss= $2" > $3
+}

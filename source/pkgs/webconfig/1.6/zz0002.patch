@@ -1,0 +1,34 @@
+diff -uNr webconfig-1.6/wc/Makefile webconfig-1.6-new/wc/Makefile
+--- webconfig-1.6/wc/Makefile	2014-02-04 14:36:52.489252370 +0400
++++ webconfig-1.6-new/wc/Makefile	2014-02-06 14:58:42.639602063 +0400
+@@ -1,4 +1,4 @@
+-VERSION=1.10.11
++VERSION=1.10.14
+ 
+ #make PLC=<config>:
+ #	OWEN_HE5684
+diff -uNr webconfig-1.6/wc/wc_strings.c webconfig-1.6-new/wc/wc_strings.c
+--- webconfig-1.6/wc/wc_strings.c	2014-02-04 14:36:52.489252370 +0400
++++ webconfig-1.6-new/wc/wc_strings.c	2014-02-06 14:53:52.271585560 +0400
+@@ -116,7 +116,8 @@
+ 	WC_STR_IDS_ERROR_TIMEOUT,
+         WC_STR_IDS_MAX_LOG_SIZE,
+ 	WC_STR_IDS_VIEW_LOG,
+-	WC_STR_IDS_CLEAR_LOG
++	WC_STR_IDS_CLEAR_LOG,
++	WC_STR_WD_TIMEOUT
+ };
+ #endif
+ 
+diff -uNr webconfig-1.6/www/cgi/tpl/net_ids_edit.tpl webconfig-1.6-new/www/cgi/tpl/net_ids_edit.tpl
+--- webconfig-1.6/www/cgi/tpl/net_ids_edit.tpl	2014-02-04 14:36:52.649252376 +0400
++++ webconfig-1.6-new/www/cgi/tpl/net_ids_edit.tpl	2014-02-06 14:55:15.959591619 +0400
+@@ -65,7 +65,7 @@
+ 		<tr><td>{=str.net.5} *</td>
+ 			<td><input id="ids_errtime" name="ids_errtime" type="text" value="" /></td></tr>
+ 
+-		<tr><td>{=str.net.8} *</td>
++		<tr><td>{=str.net.9} *</td>
+ 			<td><input id="ids_io_timeout" name="ids_io_timeout" type="text" value="" /></td></tr>
+ 
+ 		<tr><td>{=str.net.6} *</td>

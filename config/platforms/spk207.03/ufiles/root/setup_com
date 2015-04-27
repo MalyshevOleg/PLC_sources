@@ -1,0 +1,2 @@
+uartmode -485 /dev/ttyS2
+uartmode -485 /dev/ttyS3

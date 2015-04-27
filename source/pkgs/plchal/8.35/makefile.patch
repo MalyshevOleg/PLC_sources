@@ -1,0 +1,43 @@
+--- a/Makefile	2010-10-20 19:56:13.000000000 +0300
++++ b/Makefile	2010-12-14 20:15:13.000000000 +0200
+@@ -1,11 +1,17 @@
+-INCLUDES=-I/home/mishal/eclipseworkspace/linux-2.6.30-at91_2
++SDIR=./
++VPATH=$(SDIR)
++
++INCLUDES= -I$(SDIR) -I$(KERNEL_INC)
+ TARGET=libplc.so
+ #DEBUG=-DDEBUG
+ PRIVATE_BUILD=-DPRIVATE_BUILD
+-CC=arm-unknown-linux-uclibc-gcc -O2 -fPIC -c $(DEBUG) $(PRIVATE_BUILD) $(INCLUDES) -I./
+-CPP=arm-unknown-linux-uclibc-g++ -O2 -fPIC -c $(DEBUG) $(PRIVATE_BUILD) $(INCLUDES) -I./
+-LD=arm-unknown-linux-uclibc-gcc -fPIC -shared
+-STRIP=arm-unknown-linux-uclibc-strip --strip-unneeded
++DEFINES= $(DEBUG) $(PRIVATE_BUILD)
++
++CCOPTS= -O2 -fPIC
++CFLAGS=$(CCOPTS) $(DEFINES) $(INCLUDES)
++LDFLAGS= -fPIC -shared
++
++STRIP=strip
+ OBJS=main.o wdt.o ioman.o gpio.o picio.o twi_l0.o twi_l1.o kmem.o trace.o supervisor.o cnt.o enc.o pwm.o serno.o crc32.o ds2482.o
+ 
+ all: $(TARGET)
+@@ -15,7 +21,7 @@
+ 	rm $(OBJS) $(TARGET)
+     
+ $(TARGET): $(OBJS)
+-	$(LD) $^ -o $@
++	$(LD) $(LDFLAGS) $^ -o $@
+ 	$(STRIP) $@
+ 
+ main.o: main.c plc1xx.h libplc.h gpio.h trace.h
+@@ -46,8 +52,3 @@
+ 
+ 1wire.o: 1wire.c
+ 
+-.c.o:
+-	${CC} $< -o $@
+-
+-.cc.o:
+-	${CPP} $< -o $@

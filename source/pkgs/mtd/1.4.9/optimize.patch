@@ -1,0 +1,67 @@
+diff -Nru a/common.mk b/common.mk
+--- a/common.mk	2011-12-17 16:38:56.000000000 +0200
++++ b/common.mk	2012-01-17 18:30:41.000000000 +0200
+@@ -1,13 +1,14 @@
+ CC := $(CROSS)gcc
+ AR := $(CROSS)ar
+ RANLIB := $(CROSS)ranlib
++STRIP := $(CROSS)strip
+ 
+ # Stolen from Linux build system
+ comma = ,
+ try-run = $(shell set -e; ($(1)) >/dev/null 2>&1 && echo "$(2)" || echo "$(3)")
+ cc-option = $(call try-run, $(CC) $(1) -c -xc /dev/null -o /dev/null,$(1),$(2))
+ 
+-CFLAGS ?= -O2 -g
++CFLAGS ?= -Os
+ WFLAGS := -Wall \
+ 	$(call cc-option,-Wextra) \
+ 	$(call cc-option,-Wwrite-strings) \
+diff -Nru a/Makefile b/Makefile
+--- a/Makefile	2011-12-17 16:38:56.000000000 +0200
++++ b/Makefile	2012-01-17 17:51:14.000000000 +0200
+@@ -16,21 +16,11 @@
+ 
+ TESTS = tests
+ 
+-MTD_BINS = \
+-	ftl_format flash_erase nanddump doc_loadbios \
+-	ftl_check mkfs.jffs2 flash_lock flash_unlock \
+-	flash_otp_info flash_otp_dump mtd_debug flashcp nandwrite nandtest \
+-	jffs2dump \
+-	nftldump nftl_format docfdisk \
+-	rfddump rfdformat \
+-	serve_image recv_image \
+-	sumtool jffs2reader
+-UBI_BINS = \
+-	ubiupdatevol ubimkvol ubirmvol ubicrc32 ubinfo ubiattach \
+-	ubidetach ubinize ubiformat ubirename mtdinfo ubirsvol
++MTD_BINS = flash_erase mkfs.jffs2
++UBIMK_BINS = mkfs.ubifs/mkfs.ubifs
++UBI_BINS = ubinize
+ 
+-BINS = $(MTD_BINS)
+-BINS += mkfs.ubifs/mkfs.ubifs
++BINS = $(MTD_BINS) $(UBIMK_BINS)
+ BINS += $(addprefix ubi-utils/,$(UBI_BINS))
+ SCRIPTS = flash_eraseall
+ 
+@@ -58,12 +48,15 @@
+ 	rm -f $(BUILDDIR)/include/version.h
+ 	$(MAKE) -C $(TESTS) clean
+ 
++install-host: $(addprefix $(BUILDDIR)/,${BINS})
++	mkdir -p ${DESTDIR}/bin
++	$(STRIP) $^
++	install -m0755 $^ ${DESTDIR}/bin/
++
+ install:: $(addprefix $(BUILDDIR)/,${BINS}) ${SCRIPTS}
+ 	mkdir -p ${DESTDIR}/${SBINDIR}
++	$(STRIP) ${TARGETS}
+ 	install -m 0755 $^ ${DESTDIR}/${SBINDIR}/
+-	mkdir -p ${DESTDIR}/${MANDIR}/man1
+-	install -m 0644 mkfs.jffs2.1 ${DESTDIR}/${MANDIR}/man1/
+-	-gzip -9f ${DESTDIR}/${MANDIR}/man1/*.1
+ 
+ tests::
+ 	$(MAKE) -C $(TESTS)

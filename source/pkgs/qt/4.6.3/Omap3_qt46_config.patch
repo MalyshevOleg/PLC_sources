@@ -1,0 +1,85 @@
+diff --git a/mkspecs/qws/linux-omap3-g++/qmake.conf b/mkspecs/qws/linux-omap3-g++/qmake.conf
+new file mode 100644
+index 0000000..5ad4216
+--- /dev/null
++++ b/mkspecs/qws/linux-omap3-g++/qmake.conf
+@@ -0,0 +1,69 @@
++#
++# qmake configuration for building with linux-omap3-g++
++#
++include(../../common/g++.conf)
++include(../../common/linux.conf)
++include(../../common/qws.conf)
++
++#------------------------------------------------------------------------------
++# Configuration Settings
++#
++# *** YOU MUST MODIFY THE FOLLOWING SETTINGS FOR YOUR SYSTEM ***
++#
++# By default, these settings read their values from environment variables.
++# You may choose to set the relevant environment variables prior to running
++# "make" instead of setting them here.
++#------------------------------------------------------------------------------
++#
++# QMAKE_CSTOOL_DIR  : Location of CodeSourcery 2008q1 Toolset
++# QMAKE_GFX_SDK_DIR : Location of your graphics SDK directory
++# QMAKE_GFX_ES_DIR  : Graphics SDK sub-directory that contains your OpenGL
++#                     libraries.  This should be "gfx_rel" if you have ES 3.x
++#                     silicon, and "gfx_rel_es2.x" if you have ES 2.x silicon.
++#
++QMAKE_CSTOOL_DIR  = 
++QMAKE_GFX_SDK_DIR = 
++QMAKE_GFX_ES_DIR  = 
++
++#------------------------------------------------------------------------------
++# Modifications to g++.conf
++#------------------------------------------------------------------------------
++# Compiler Flags to take advantage of the ARM Cortex-A8 architecture
++#
++# Change the next two lines to efficiently compile Qt for ARM generation if it
++#     is other than Cortex-A8
++#
++QMAKE_CFLAGS_RELEASE   = -O3 -march=armv7-a -mtune=cortex-a8 -mfpu=neon -mfloat-abi=softfp
++QMAKE_CXXFLAGS_RELEASE = -O3 -march=armv7-a -mtune=cortex-a8 -mfpu=neon -mfloat-abi=softfp
++
++#------------------------------------------------------------------------------
++# It should be ok to leave the remaining settings unmodified
++#------------------------------------------------------------------------------
++
++# Toolchain
++QMAKE_CSTOOL_BIN = $$QMAKE_CSTOOL_DIR/bin
++
++QMAKE_CC         = arm-unknown-linux-gnueabi-gcc
++QMAKE_CXX        = arm-unknown-linux-gnueabi-g++
++QMAKE_LINK       = arm-unknown-linux-gnueabi-g++
++QMAKE_LINK_SHLIB = arm-unknown-linux-gnueabi-g++
++QMAKE_AR         = arm-unknown-linux-gnueabi-ar cqs
++QMAKE_OBJCOPY    = arm-unknown-linux-gnueabi-objcopy
++QMAKE_STRIP      = arm-unknown-linux-gnueabi-strip
++
++# Search Paths
++#QMAKE_INCDIR  = $$QMAKE_GFX_SDK_DIR/GFX_Linux_SDK/OGLES2/SDKPackage/Builds/OGLES2/Include
++#QMAKE_INCDIR += $$QMAKE_GFX_SDK_DIR/GFX_Linux_SDK/OGLES2/SDKPackage/Builds/OGLES2/LinuxOMAP3/Include
++#QMAKE_INCDIR += $$QMAKE_GFX_SDK_DIR/GFX_Linux_SDK/OGLES/SDKPackage/Builds/OGLES/Include
++#QMAKE_INCDIR += $$QMAKE_GFX_SDK_DIR/include
++#QMAKE_INCDIR += $$QMAKE_GFX_SDK_DIR/GFX_Linux_SDK/OVG/SDKPackage/Builds/OVG/Include
++#QMAKE_LIBDIR  = $$QMAKE_GFX_SDK_DIR/$$QMAKE_GFX_ES_DIR
++
++# Specify additional libraries to link
++QMAKE_LIBS_EGL          = -lEGL -lIMGegl -lsrv_um
++QMAKE_LIBS_OPENGL_ES1   = $$QMAKE_LIBS_EGL -lGLES_CM 
++QMAKE_LIBS_OPENGL_ES1CL = $$QMAKE_LIBS_OPENGL_ES1
++QMAKE_LIBS_OPENGL_ES2   = $$QMAKE_LIBS_EGL -lGLESv2 
++QMAKE_LIBS_OPENVG       = $$QMAKE_LIBS_EGL -lOpenVG -lOpenVGU
++
++load(qt_config)
+diff --git a/mkspecs/qws/linux-omap3-g++/qplatformdefs.h b/mkspecs/qws/linux-omap3-g++/qplatformdefs.h
+new file mode 100644
+index 0000000..99e9a27
+--- /dev/null
++++ b/mkspecs/qws/linux-omap3-g++/qplatformdefs.h
+@@ -0,0 +1 @@
++#include "../../linux-g++/qplatformdefs.h"
+-- 
+1.6.3.3
+

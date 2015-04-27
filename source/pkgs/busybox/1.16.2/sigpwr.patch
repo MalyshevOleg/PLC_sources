@@ -1,0 +1,114 @@
+diff -Nru busybox-1.16.2.old/init/init.c busybox-1.16.2/init/init.c
+--- busybox-1.16.2.old/init/init.c	2010-06-12 16:50:08.000000000 +0300
++++ busybox-1.16.2/init/init.c	2011-01-14 20:33:29.000000000 +0200
+@@ -29,6 +29,9 @@
+ #define INIT_SCRIPT  "/etc/init.d/rcS"
+ #endif
+ 
++/* COMPAT: SIGPWR reason (OK/BAD) */
++#define PWRSTAT		"/var/run/powerstatus"
++
+ /* Each type of actions can appear many times. They will be
+  * handled in order. RESTART is an exception, only 1st is used.
+  */
+@@ -69,12 +72,15 @@
+  */
+ #define RESTART     0x80
+ 
++#define POWERFAIL   0x100
++#define POWERWAIT   0x200
++#define POWEROKWAIT 0x400
+ 
+ /* A linked list of init_actions, to be read from inittab */
+ struct init_action {
+ 	struct init_action *next;
+ 	pid_t pid;
+-	uint8_t action_type;
++	uint16_t action_type;
+ 	char terminal[CONSOLE_NAME_SIZE];
+ 	char command[COMMAND_SIZE];
+ };
+@@ -271,6 +277,7 @@
+ 		+ (1 << SIGHUP)
+ 		+ (1 << SIGTSTP)
+ 		+ (1 << SIGSTOP)
++		+ (1 << SIGPWR)
+ 		, SIG_DFL);
+ 	sigprocmask_allsigs(SIG_UNBLOCK);
+ }
+@@ -447,9 +454,9 @@
+ 		if (!(a->action_type & action_type))
+ 			continue;
+ 
+-		if (a->action_type & (SYSINIT | WAIT | ONCE | CTRLALTDEL | SHUTDOWN)) {
++		if (a->action_type & (SYSINIT | WAIT | POWERFAIL | POWERWAIT | POWEROKWAIT | ONCE | CTRLALTDEL | SHUTDOWN)) {
+ 			pid_t pid = run(a);
+-			if (a->action_type & (SYSINIT | WAIT | CTRLALTDEL | SHUTDOWN))
++			if (a->action_type & (SYSINIT | WAIT | POWERWAIT | POWEROKWAIT | CTRLALTDEL | SHUTDOWN))
+ 				waitfor(pid);
+ 		}
+ 		if (a->action_type & (RESPAWN | ASKFIRST)) {
+@@ -462,7 +469,7 @@
+ 	}
+ }
+ 
+-static void new_init_action(uint8_t action_type, const char *command, const char *cons)
++static void new_init_action(uint16_t action_type, const char *command, const char *cons)
+ {
+ 	struct init_action *a, **nextp;
+ 
+@@ -553,7 +560,8 @@
+ 		/* order must correspond to SYSINIT..RESTART constants */
+ 		static const char actions[] ALIGN1 =
+ 			"sysinit\0""wait\0""once\0""respawn\0""askfirst\0"
+-			"ctrlaltdel\0""shutdown\0""restart\0";
++			"ctrlaltdel\0""shutdown\0""restart\0""powerfail\0"
++			"powerwait\0""powerokwait\0";
+ 		int action;
+ 		char *tty = token[0];
+ 
+@@ -580,6 +588,35 @@
+ #endif
+ }
+ 
++static void powerfail_handler(int sig)
++{
++	int	pwrstat;
++	int	fd;
++	char	c;
++
++	/* See _what_ kind of SIGPWR this is. */
++	pwrstat = 0;
++	if ((fd = open(PWRSTAT, O_RDONLY)) >= 0) {
++		c = 0;
++		read(fd, &c, 1);
++		pwrstat = c;
++		close(fd);
++		unlink(PWRSTAT);
++	}
++	if (pwrstat == 'O') {
++		/*
++	 	 *	The power is OK again.
++	 	 */
++		run_actions(POWEROKWAIT);
++	} else {
++		/*
++		 *	Power is failing, shutdown imminent
++		 */
++		run_actions(POWERFAIL|POWERWAIT);
++	}
++
++}
++
+ static void pause_and_low_level_reboot(unsigned magic) NORETURN;
+ static void pause_and_low_level_reboot(unsigned magic)
+ {
+@@ -943,7 +980,7 @@
+ 			+ (1 << SIGUSR2) /* poweroff */
+ 			, halt_reboot_pwoff);
+ 		signal(SIGQUIT, restart_handler); /* re-exec another init */
+-
++		signal(SIGPWR, powerfail_handler);
+ 		/* Stop handler must allow only SIGCONT inside itself */
+ 		memset(&sa, 0, sizeof(sa));
+ 		sigfillset(&sa.sa_mask);

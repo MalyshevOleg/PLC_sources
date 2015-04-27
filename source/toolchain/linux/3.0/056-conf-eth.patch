@@ -1,0 +1,81 @@
+diff -uNr linux-3.0/drivers/net/arm/at91_ether.c linux-3.0_new/drivers/net/arm/at91_ether.c
+--- linux-3.0/drivers/net/arm/at91_ether.c	2014-04-23 15:15:54.770135256 +0400
++++ linux-3.0_new/drivers/net/arm/at91_ether.c	2014-04-17 15:06:13.408077529 +0400
+@@ -37,6 +37,7 @@
+ #include <mach/at91rm9200_emac.h>
+ #include <mach/gpio.h>
+ #include <mach/board.h>
++#include <linux/proc_fs.h>
+ 
+ #include "at91_ether.h"
+ 
+@@ -427,7 +428,8 @@
+ 
+ static void at91ether_feed_watchdog(struct at91_private *lp)
+ {
+-	mod_timer(&lp->watchdog_timer, jiffies + (HZ) * wdt_timeout);
++	if(wdt_timeout>0)
++		mod_timer(&lp->watchdog_timer, jiffies + (HZ) * wdt_timeout);
+ }
+ 
+ static struct net_device_stats *at91ether_stats(struct net_device *dev);
+@@ -1469,13 +1471,59 @@
+ 	},
+ };
+ 
++#define NAME_NODE "eth_wdt_timeout"
++#define LEN_MSG 10                       // длина буфера и сам буфер обмена
++static char buf_msg[ LEN_MSG + 1 ] = "0";
++
++static ssize_t node_read( struct file *file, char *buf,
++	                          size_t count, loff_t *ppos ) 
++{
++	      sprintf(buf_msg,"%s\n",wdt_timeout);
++	      int res = copy_to_user( (void*)buf, &buf_msg, strlen( buf_msg ) );
++	      res = strlen( buf_msg );
++	      return res;
++}
++
++static ssize_t node_write( struct file *file, const char *buf,
++	                           size_t count, loff_t *ppos ) 
++{
++	   int res, len = count < LEN_MSG ? count : LEN_MSG;
++//	   printk( KERN_INFO "write: %d\n", count );
++	   res = copy_from_user( &buf_msg, (void*)buf, len );
++	   if( '\n' == buf_msg[ len -1 ] ) buf_msg[ len -1 ] = '\0';
++	   else buf_msg[ len ] = '\0';
++	   sscanf(buf_msg, "%u", &wdt_timeout);
++	   printk( KERN_INFO "new wdt= %d = %d\n", wdt_timeout );
++	   return len;
++}
++
++static const struct file_operations node_fops = {
++	   .owner = THIS_MODULE,
++	   .read  = node_read,
++	   .write  = node_write
++	};
++
+ static int __init at91ether_init(void)
+ {
++      int ret; 
++       struct proc_dir_entry *own_proc_node; 
++       own_proc_node = create_proc_entry( NAME_NODE, S_IFREG | S_IRUGO | S_IWUGO, NULL ); 
++       if( NULL == own_proc_node ) {
++          ret = -ENOMEM;
++          printk( KERN_ERR "can't create /proc/%s\n", NAME_NODE );
++          goto err_node;
++        }
++         own_proc_node->uid = 0;
++         own_proc_node->gid = 0;
++         own_proc_node->proc_fops = &node_fops;       
+ 	return platform_driver_probe(&at91ether_driver, at91ether_probe);
++err_node:
++	return ret;
+ }
+ 
+ static void __exit at91ether_exit(void)
+ {
++	remove_proc_entry( NAME_NODE, NULL );	
+ 	platform_driver_unregister(&at91ether_driver);
+ }
+ 

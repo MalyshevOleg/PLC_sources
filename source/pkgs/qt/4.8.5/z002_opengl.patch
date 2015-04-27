@@ -1,0 +1,12 @@
+diff -uNr qt-everywhere-opensource-src-4.8.5_nopwrvr/src/plugins/gfxdrivers/powervr/QWSWSEGL/pvrqwswsegl.c qt-everywhere-opensource-src-4.8.5/src/plugins/gfxdrivers/powervr/QWSWSEGL/pvrqwswsegl.c
+--- qt-everywhere-opensource-src-4.8.5_nopwrvr/src/plugins/gfxdrivers/powervr/QWSWSEGL/pvrqwswsegl.c	2014-09-10 12:47:47.915958854 +0400
++++ qt-everywhere-opensource-src-4.8.5/src/plugins/gfxdrivers/powervr/QWSWSEGL/pvrqwswsegl.c	2014-10-01 15:27:13.926737871 +0400
+@@ -39,7 +39,7 @@
+ **
+ ****************************************************************************/
+ 
+-#include <GLES/eglplatform.h>
++#include <EGL/eglplatform.h>
+ #include <wsegl.h>
+ #include <pvr2d.h>
+ #include <string.h>

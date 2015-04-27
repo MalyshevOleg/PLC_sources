@@ -1,0 +1,74 @@
+#!/bin/sh
+
+# show only critical kernel errors
+dmesg -n 1
+
+# load can driver and setup default speed
+modprobe mcp251x
+modprobe can_raw
+ip link set can0 type can bitrate 125000
+ip link set can0 up
+
+# load eeeprom driver and enable write to the whole memory
+modprobe at25
+echo 0x00 > /sys/devices/platform/atmel_spi.0/spi0.1/sr
+
+# extract retain memory config from /proc/owen_rm_info
+RETAIN_SIZE=`cat /proc/owen_rm_info|grep -E 'size=.+, address='|cut -d "," -f1|cut -d "=" -f2`
+RETAIN_ADDR=`cat /proc/owen_rm_info|grep -E 'size=.+, address='|cut -d "," -f2|cut -d "=" -f2`
+
+update_rmsync_cfg=1
+if [ -s /root/retain/rmsync.cfg ]; then
+    # -a includes hostname which may be changed, -p works strange..
+    if [ "`head -n 1 /root/retain/rmsync.cfg`" = "#`uname -mrsv`" ]; then
+	update_rmsync_cfg=0
+	echo "/root/retain/rmsync.cfg: correct"
+    fi
+fi
+if [ "$update_rmsync_cfg" = "1" ]; then
+    # making new rmsync.cfg
+    echo "#`uname -mrsv`" > /root/retain/rmsync.cfg
+    cat /root/retain/rmsync.cfg.in >> /root/retain/rmsync.cfg
+    
+    # edit rmsync.cfg
+    sed -ir -e '\
+	s/RETAIN_SIZE=.*$/RETAIN_SIZE='$RETAIN_SIZE'/
+	s/RETAIN_ADDR=.*$/RETAIN_ADDR='$RETAIN_ADDR'/' \
+	/root/retain/rmsync.cfg
+    sync
+    echo "/root/retain/rmsync.cfg: created & updated"
+fi
+
+# check each CoDeSys config: if retain memory params are wrong - fix it.
+CODESYS_DIR=/root/CoDeSysSP
+CODESYS_CONFIGS="CoDeSysSP.cfg"
+
+for fn in $CODESYS_CONFIGS; do
+    if [ -f $CODESYS_DIR/$fn ]; then
+	echo -n "testing $fn: "
+	_size=`cat $CODESYS_DIR/$fn | awk '/^Retain.SRAM.Size=/ { print substr($1, index($1, "=") + 1); }'`
+	_addr=`cat $CODESYS_DIR/$fn | awk '/^Retain.SRAM.Address=/ { print substr($1, index($1, "=") + 1); }'`
+	if [ "${RETAIN_ADDR}" != "${_addr}" -o "${RETAIN_SIZE}" != "${_size}" ]; then
+	    # edit config
+	    sed -ir -e '\
+		s/Retain.SRAM.Size=.*$/Retain.SRAM.Size='$RETAIN_SIZE'/
+		s/Retain.SRAM.Address=.*$/Retain.SRAM.Address='$RETAIN_ADDR'/' \
+		$CODESYS_DIR/$fn
+	    sync
+	    echo "updated"
+	else
+	    echo "correct"
+	fi
+    fi
+done
+
+# run retain memory synchronizer for CodeSys
+nice -n 10 /root/retain/rmsync -v -v &
+
+# run web server with web-configurator
+/usr/sbin/thttpd -g -C /etc/thttpd.conf
+
+# run CoDeSys
+export LD_LIBRARY_PATH=/mnt/ufs/root/CoDeSysSP/
+cd /mnt/ufs/root/CoDeSysSP
+nice -n 10 ./codesyssp &

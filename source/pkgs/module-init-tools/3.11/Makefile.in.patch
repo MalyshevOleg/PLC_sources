@@ -1,0 +1,11 @@
+--- 1/Makefile.in	2009-10-15 13:05:03.000000000 +0300
++++ 2/Makefile.in	2010-03-09 19:50:17.000000000 +0200
+@@ -859,7 +859,7 @@
+ 	       exit 1; } >&2
+ check-am: all-am
+ check: check-am
+-all-am: Makefile $(LIBRARIES) $(PROGRAMS) $(MANS)
++all-am: Makefile $(LIBRARIES) $(PROGRAMS)
+ installdirs:
+ 	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(sbindir)" "$(DESTDIR)$(man5dir)" "$(DESTDIR)$(man8dir)"; do \
+ 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \

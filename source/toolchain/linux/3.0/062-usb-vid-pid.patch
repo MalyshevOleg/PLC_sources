@@ -1,0 +1,41 @@
+diff -uNr linux-3.0_orig/drivers/usb/gadget/ether.c linux-3.0/drivers/usb/gadget/ether.c
+--- linux-3.0_orig/drivers/usb/gadget/ether.c	2014-07-09 16:45:51.520652234 +0400
++++ linux-3.0/drivers/usb/gadget/ether.c	2014-07-09 17:21:21.468779823 +0400
+@@ -134,8 +134,8 @@
+ /* Thanks to NetChip Technologies for donating this product ID.
+  * It's for devices with only CDC Ethernet configurations.
+  */
+-#define CDC_VENDOR_NUM		0x0525	/* NetChip */
+-#define CDC_PRODUCT_NUM		0xa4a1	/* Linux-USB Ethernet Gadget */
++#define CDC_VENDOR_NUM		0x1555	/* NetChip */
++#define CDC_PRODUCT_NUM		0x0002	/* Linux-USB Ethernet Gadget */
+ 
+ /* For hardware that can't talk CDC, we use the same vendor ID that
+  * ARM Linux has used for ethernet-over-usb, both with sa1100 and
+@@ -148,20 +148,20 @@
+  * RNDIS (like SA-1100, with no interrupt endpoint, or anything that
+  * doesn't handle control-OUT).
+  */
+-#define	SIMPLE_VENDOR_NUM	0x049f
+-#define	SIMPLE_PRODUCT_NUM	0x505a
++#define	SIMPLE_VENDOR_NUM	0x1555
++#define	SIMPLE_PRODUCT_NUM	0x0003
+ 
+ /* For hardware that can talk RNDIS and either of the above protocols,
+  * use this ID ... the windows INF files will know it.  Unless it's
+  * used with CDC Ethernet, Linux 2.4 hosts will need updates to choose
+  * the non-RNDIS configuration.
+  */
+-#define RNDIS_VENDOR_NUM	0x0525	/* NetChip */
+-#define RNDIS_PRODUCT_NUM	0xa4a2	/* Ethernet/RNDIS Gadget */
++#define RNDIS_VENDOR_NUM	0x1555	/* NetChip */
++#define RNDIS_PRODUCT_NUM	0x0001	/* Ethernet/RNDIS Gadget */
+ 
+ /* For EEM gadgets */
+-#define EEM_VENDOR_NUM		0x1d6b	/* Linux Foundation */
+-#define EEM_PRODUCT_NUM		0x0102	/* EEM Gadget */
++#define EEM_VENDOR_NUM		0x1555	/* Linux Foundation */
++#define EEM_PRODUCT_NUM		0x0004	/* EEM Gadget */
+ 
+ /*-------------------------------------------------------------------------*/
+ 

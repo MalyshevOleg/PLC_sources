@@ -1,0 +1,30 @@
+include $(PLATFORMS_DIR)/common/defconfig.mk
+
+KERNEL_DEFCONFIG=owen_spk210_can_var_defconfig
+XLOADER_DEFCONFIG=owen_spk2xx_var_config
+BOOT_DEFCONFIG=owen_spk2xx_var10_config
+
+UBOOT_LOGO=$(UBOOT_SDIR)/board/owen/spk2xx_var10/logo.h
+UBOOT_BOARD_NAME=spk210.04.web
+UBOOT_BOARD_FULL_NAME=spk210.04.web
+
+TARG_HOSTNAME=spk210.04.web
+
+ROOTFS_DEVICE=/dev/mtdblock2
+ROOTFS_TYPE=ubifs
+
+UART_DEV=ttyS0
+UART_BAUD=115200
+
+GFX_VERS = 4.08.00.01
+GFX_VERS_BASE = 4.08.00.01
+GFXKM_VERS = 4.08.00.01
+GFXKM_VERS_BASE = 4.08.00.01
+
+
+FLASH_TYPE=NAND
+FLASH_SIZE=0x10000000
+MTD_PARTS=mtdparts=omap2-nand.0:0x80000(xloader),0x200000(u-boot),0x500000(kernel),0x3640000(rootfs),-(userfs)
+BOOT_ARGS=$(MTD_PARTS) mem=128M root=ubi0:rfs rootfstype=ubifs ro ubi.mtd=3 ubi.mtd=4 console=$(UART_DEV),$(UART_BAUD)n8
+# needed for detecting UBI parts by their indexes specified via ubi.mtd=
+MTD_PARTS_SHIFT=0

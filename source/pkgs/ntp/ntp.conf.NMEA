@@ -1,0 +1,5 @@
+server 127.127.20.0 mode 18 prefer
+fudge 127.127.20.0  
+driftfile /var/run/ntp.drift
+disable auth
+logfile /var/log/ntp.log

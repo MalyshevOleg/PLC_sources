@@ -1,0 +1,7 @@
+#!/bin/sh
+
+#rmmod g_ether
+
+/etc/rc.sync 1
+
+/bin/umount -a -r

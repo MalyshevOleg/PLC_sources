@@ -1,0 +1,9 @@
+ABORT 'BUSY'
+ABORT 'NO CARRIER'
+'' 'AT'
+# negotiation configuraed by WC
+OK 'AT+CGDCONT=1,"IP","internet.beeline.ru"'
+OK 'ATD*99***1#'
+# end of the WC-configured negotiation
+TIMEOUT 30
+CONNECT

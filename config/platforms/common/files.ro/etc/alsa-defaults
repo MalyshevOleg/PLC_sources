@@ -1,0 +1,6 @@
+cset name='Headphone Playback Switch' on
+cset name='Headphone Playback Volume' 20
+cset name='PCM Playback to Headphone Switch' on
+cset name='PCM Playback Volume' 20
+cset name='Bass Volume' 2
+cset name='Tone Volume' 10

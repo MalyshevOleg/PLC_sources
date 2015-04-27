@@ -1,0 +1,11 @@
+--- libmodbus-3.0.2_orig/src/modbus.c	2012-01-25 06:29:36.000000000 +0200
++++ libmodbus-3.0.2/src/modbus.c	2012-05-06 14:36:57.000000000 +0300
+@@ -302,6 +302,8 @@
+             function == _FC_REPORT_SLAVE_ID ||
+             function == _FC_WRITE_AND_READ_REGISTERS) {
+             length = msg[ctx->backend->header_length + 1];
++        } else if (function == 0x14) { /* read file record */
++            length = msg[ctx->backend->header_length + 1];
+         } else {
+             length = 0;
+         }

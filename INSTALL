@@ -1,0 +1,84 @@
+SYSTEM REQUIREMENTS ===
+
+ATTENTION! If you use Ubuntu make sure you use bash (do uninstall dash)!
+Please check that /bin/sh points to bash.
+
+You DO NEED these packages and utils installed on your build server:
+
+1) mpfr 2.3.1+ (libmpfr-dev on Ubuntu/Debian; mpfr-devel on Centos/RHEL)
+2) gmp 4.2.2+ (libgmp3-dev on Ubuntu/Debian; gmp-devel on Centos/RHEL)
+3) lndir utility (xutils-dev on Ubuntu/Debian; imake on Centos/RHEL)
+4) makeinfo utility (texinfo)
+5) bison, flex and libtool
+6) gawk (NOTE: glibc build fails with mawk on Ubuntu!)
+7) zlib (zlib1g-dev on Ubuntu/Debian; zlib-devel on Centos/RHEL)
+8) glib2 (libglib2.0-dev on Ubuntu/Debian; glib2-devel on Centos/RHEL)
+9) autoconf
+10) gcc-g++ (g++ on Ubuntu; gcc-c++ on Centos/RHEL)
+11) ncurses (libncurses5-dev on Ubuntu; ncurses-devel on Centos/RHEL)
+12) liblzo2-dev (lzo-devel on Centos/RHEL)
+13) mkfs.cramfs (util-linux on Ubuntu/Debian/Centos/RHEL)
+14) util-linux-ng (uuid-dev on Ubuntu; uuid-devel on Centos/RHEL)
+15) gettext
+16) crc32 (libarchive-zip-perl on Ubuntu/Debian; perl-Archive-Zip on Centos/RHEL)
+17) ffmpeg for u-boot logo convert
+18) bin2h (a56 on Ubuntu/Debian; - on Centos/RHEL)
+19) mksquashfs (squashfs-tools on Ubuntu/Debian/Centos/RHEL)
+20) xxd (vim-common on Ubuntu/Debian/Centos/RHEL)
+21) lzop (lzop on Centos/RHEL)
+
+You can run the following command on Ubuntu host:
+  make checksystem
+to get the list of required packages.
+
+QUICK INSTALL FOR TOOLCHAIN ===
+
+To build the toolchain do the following:
+1) run 'make toolchain' from this directory
+2) wait while it compiles (it takes about 1 hour)
+3) get the toolchain in the ./cross directory
+
+
+QUICK INSTALL FOR RUNTIME IMAGE ===
+
+1) run 'make' or 'make base-system' from this directory
+2) wait while it compiles (it takes about XX hours from the scratch:
+about 1 hour to build toolchain and about 1 hour to build packages).
+If toolchain is already built this step takes less than 1 hour.
+3) get the runtime in the ./bootsys-owen/runtime directory
+NOTE: File ownership and permissions in this directory are wrong.
+4) run 'make fsimg'
+5) get final image(s): ./bootsys-plc100/plc.fs ./bootsys-plc100/user.fs
+
+
+CONFIGURING ===
+
+If you want to change default settings for paths, you have to edit
+the config/configvars.mk file. You should use ABSOLUTE paths!
+Do check you (or your group) have write permissions for these directories.
+
+Use BUILDCONF to select board name to build runtime for, e.g.
+BUILDCONF=plc100
+
+Use TARGET_DIR to specify directory for the final toolchain, e.g.
+TARGET_DIR=/opt/owen/cross
+
+Use BOOTSYS_DIR to specify directory for resulting images 
+(kernel, u-boot, etc.), e.g.
+BOOTSYS_DIR=/home/user/bootsys
+
+To put all the temporary files to a separate directory use the BUILD_ROOT, e.g.
+BUILD_ROOT=/home/user/buildtemp
+
+To build the toolchain for i686/x86_64 system you should specify the
+appropriate HOST_CPU value (run 'make BUILDMACH=i686 toolchain' to 
+override the autodetection).
+
+If you need root privileges to install cross toolchain you should set 
+USE_SUDO=TRUE.
+
+Please, be carefull while changing the configvars.mk.
+Now you can build toolchain or final images (see top of the file)
+
+WBR,
+Oleg 

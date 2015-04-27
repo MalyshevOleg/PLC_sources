@@ -1,0 +1,11 @@
+diff -uNr gcc-4.3.2-old/missing gcc-4.3.2-new/missing
+--- gcc-4.3.2-old/missing	2005-07-14 04:08:13.000000000 +0300
++++ gcc-4.3.2-new/missing	2015-03-26 12:08:11.696076900 +0300
+@@ -299,7 +299,6 @@
+     fi
+     # If the file does not exist, the user really needs makeinfo;
+     # let's fail without touching anything.
+-    test -f $file || exit 1
+     touch $file
+     ;;
+ 

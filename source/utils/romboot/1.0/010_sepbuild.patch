@@ -1,0 +1,634 @@
+diff -Nru romboot-1.0/init.c romboot-1.0-new/init.c
+--- a/init.c	2010-07-13 20:50:19.000000000 +0300
++++ b/init.c	2010-08-05 21:45:53.000000000 +0300
+@@ -89,39 +89,24 @@
+ //*--------------------------------------------------------------------------------------
+ void AT91F_InitSdram()
+ {
+-	int *pRegister;
++	volatile int *pRegister;
++	int i;
+ 	
+ 	//* Configure PIOC as peripheral (D16/D31)
+ 	
+ 	AT91F_PIO_CfgPeriph(
+-						 AT91C_BASE_PIOC, // PIO controller base address
+-						 0xFFFF0030,
+-						 0
+-						);
+-/*	
+-    AT91C_BASE_SDRC->SDRC_MR = AT91C_SDRC_MODE_PRCGALL_CMD;
+-	*pSDRAM = 0;
+-	
+-	    //* 3. Eight Auto-refresh are provided
+-		AT91C_BASE_SDRC->SDRC_MR = AT91C_SDRC_MODE_RFSH_CMD;
+-		    for(i=0;i<8;i++)
+-			    *pSDRAM = 0;
+-			    
+-				//* 4. A mode register cycle is issued to program the SDRAM parameters
+-				    AT91C_BASE_SDRC->SDRC_MR = AT91C_SDRC_MODE_LMR_CMD;
+-					*(pSDRAM+0x80) = 0;
+-					
+-					    //* 5. Write refresh rate into SDRAMC refresh timer COUNT register
+-						AT91C_BASE_SDRC->SDRC_TR = (AT91C_SDRC_COUNT & 0x2E0);
+-						    *pSDRAM = 0;
+-						    
+-							//* 6. A Normal Mode Command is provided, 3 clocks after tMRD is set
+-							    AT91C_BASE_SDRC->SDRC_MR = AT91C_SDRC_MODE_NORMAL_CMD;
+-								*pSDRAM = 0;
+-*/									
++		AT91C_BASE_PIOC, // PIO controller base address
++		0xFFFF0030,
++		0
++	);
++	for(i=0;i<100;i++)
++		*pRegister = (int*)0xFFFFFF98;
++
+ 	//*Init SDRAM
+ 	pRegister = (int *)0xFFFFFF98;
+ 	*pRegister = SDRAM_CFG;
++	pRegister = (int *)0xFFFFFFA4;
++	*pRegister = 0x1; // enable refresh error interrupt
+ 	pRegister = (int *)0xFFFFFF90;
+ 	*pRegister = 2; // all banks precharge 
+ 	pRegister = (int *)0x20000000;
+@@ -131,19 +116,13 @@
+ 	pRegister = (int *)0x20000000;
+ 	*pRegister = 0; 
+ 	*pRegister = 0; 
+-	*pRegister = 0; 
+-	*pRegister = 0; 
+-	*pRegister = 0; 
+-	*pRegister = 0; 
+-	*pRegister = 0; 
+-	*pRegister = 0; 
+ 	pRegister = (int *)0xFFFFFF90;
+ 	*pRegister = 0x3; // load mode
+ 	pRegister = (int *)0x20000080;
+ 	*pRegister = 0; 
+ 
+ 	pRegister = (int *)0xFFFFFF94;
+-	*pRegister = 0x2e0; // refresh time
++	*pRegister = REFRESH_TIME; // refresh time
+ 	pRegister = (int *)0x20000000;
+ 	*pRegister = 0; 
+ 
+@@ -161,12 +140,16 @@
+ //*----------------------------------------------------------------------------
+ void AT91F_InitMemories()
+ {
+-	int *pEbi = (int *)0xFFFFFF60;
++	volatile int *pEbi = (int *)0xFFFFFF60;
+ 
+ //* Setup MEMC to support all connected memories (CS0 = FLASH; CS1=SDRAM)
+ 	pEbi  = (int *)0xFFFFFF60;
+ 	*pEbi = 0x00000002;
+-
++#ifdef PLC304
++// setup pull-up for NOR flash memory
++	pEbi  = (int *)0xFFFFFF64;
++	*pEbi = 0x00000000;
++#endif
+ //* CS0 cs for flash
+ 	pEbi  = (int *)0xFFFFFF70;
+ 	*pEbi = 0x00003284;
+@@ -175,7 +158,24 @@
+ 
+ }
+ 
++void AT91F_InitClocks()
++{
++	volatile int *pPS_SYS= (int*)0xFFFFFC14; // PCDR
++	*pPS_SYS = 0xffffffff;
++
++	pPS_SYS = (int*)0xFFFFFC28; // PLLA
++	*pPS_SYS = 0x202c8f04; // set to 180MHz
++
++	pPS_SYS = (int*)0xFFFFFC68; // Status register
++	while (!(*pPS_SYS & 0x2)); // waiting for clock stabilization
+ 
++	pPS_SYS = (int*)0xFFFFFC30; // MCK
++	//according to ERRATA - MCKR should be programmed in two steps
++	*pPS_SYS = 0x202; // Master clock set to 1/3 of Processor clock
++
++	pPS_SYS = (int*)0xFFFFFC68; // Status register
++	while (!(*pPS_SYS & 0x4)); // waiting for clock stabilization
++}
+ 
+ //*----------------------------------------------------------------------------
+ //* \fn    AT91F_LowLevelInit
+@@ -208,7 +208,9 @@
+ 	AT91F_AIC_SetExceptionVector((unsigned int *)0x0C, AT91F_FetchAbort);
+ 	AT91F_AIC_SetExceptionVector((unsigned int *)0x10, AT91F_DataAbort);
+ 	AT91F_AIC_SetExceptionVector((unsigned int *)0x4, AT91F_Undef);
+-
++#ifndef PLC304
++	AT91F_InitClocks();
++#endif
+ 	//Initialize SDRAM and Flash
+ 	AT91F_InitMemories();
+ 	
+@@ -217,9 +219,9 @@
+ 
+ 	// Configure DBGU
+ 	AT91F_US_Configure (
+-		(AT91PS_USART) AT91C_BASE_DBGU,          // DBGU base address
+-		48000000,             // 48 MHz
+-		AT91C_US_ASYNC_MODE,        // mode Register to be programmed
++		(AT91PS_USART) AT91C_BASE_DBGU, // DBGU base address
++		MASTER_CLOCK,         // 60 MHz (48 MHz for plc304)
++		AT91C_US_ASYNC_MODE,  // mode Register to be programmed
+ 		115200 ,              // baudrate to be programmed
+ 		0);                   // timeguard to be programmed
+ 
+diff -Nru romboot-1.0/main.c romboot-1.0-new/main.c
+--- a/main.c	2009-07-21 10:32:23.000000000 +0300
++++ b/main.c	2010-08-09 17:52:14.000000000 +0300
+@@ -17,7 +17,7 @@
+ #include "com.h"
+ #include "main.h"
+ #include "dataflash.h"
+-#include "../../owen-release-plc100.h"
++#include "owen-release.h"
+ #include "sysconfig.h"
+ 
+ #define AT91C_UBOOT_SIZE 128*1024
+@@ -26,6 +26,8 @@
+ #define DELAY_MAIN_FREQ	1000
+ #define DISP_LINE_LEN 16
+ 
++#define raw_readw(a)			(*(volatile unsigned short *)(a))
++
+ //* prototypes
+ extern void AT91F_DBGU_Printk(char *);
+ void AT91F_ST_ASM_Handler(void);
+@@ -34,11 +36,17 @@
+ const char *menu_separ = "*----------------------------------------*\n\r";
+ 
+ const char *menu_dataflash = {
++#ifndef PLC304
+   "1: Download ROMBOOT to Dataflash\n\r"
+   "2: Download U-BOOT to Dataflash\n\r"
+   "3: Start U-BOOT\n\r"
+   "4: Clear U-BOOT environment\n\r"
+-  "5: Clear user filesystem\n\r"
++  "5: Clear kernel and filesystem\n\r"
++#else
++  "4: Clear U-BOOT environment\n\r"
++  "5: Clear kernel and filesystem\n\r"
++  "6: Download U-BOOT to NOR flash\n\r"
++#endif
+ };
+ 
+ //* Globales variables 
+@@ -53,6 +61,17 @@
+ AT91S_CtlTempo  	ctlTempo;
+ AT91S_SvcTempo 		svcTempo; 	 // Link to a AT91S_Tempo object
+ 
++//*--------------------------------------------------------------------------------------
++//* Function Name       : raw_writew(unsigned short value, void *addr)
++//* Object              : Write 16 bit date to specified address
++//* Input Parameters    :
++//* Output Parameters   :
++//*--------------------------------------------------------------------------------------
++static void raw_writew(unsigned short value, void *addr)
++{
++ (*(volatile unsigned short *)(addr) = (value));
++}
++
+ 
+ //*--------------------------------------------------------------------------------------
+ //* Function Name       : GetTickCount()
+@@ -196,9 +215,6 @@
+ //*--------------------------------------------------------------------------------------
+ void AT91F_SetPLL(void)
+ {
+-  volatile int tmp = 0;
+-
+-  
+   AT91PS_CKGR pCkgr = AT91C_BASE_CKGR;
+   AT91PS_PMC pPmc = AT91C_BASE_PMC;
+   
+@@ -246,26 +262,112 @@
+   
+   /* write the end of interrupt control register */
+   *AT91C_AIC_EOICR	= 0;
+-  
++#ifdef PLC304  
+   AT91F_SetPLL();
++#endif
+ }
+ 
+ void AT91F_StartUboot(unsigned int dummy, void *pvoid)
+ {
+-  AT91PS_CKGR pCkgr = AT91C_BASE_CKGR;
+-  AT91PS_PMC pPmc = AT91C_BASE_PMC;
+   printf("Load U-BOOT from dataflash[%x] to SDRAM[%x]\n\r", AT91C_UBOOT_DATAFLASH_ADDR, AT91C_UBOOT_ADDR);
+   read_dataflash(AT91C_UBOOT_DATAFLASH_ADDR, AT91C_UBOOT_SIZE, (char *)(AT91C_UBOOT_ADDR));
+-  printf("Set PLLA to 180Mhz and Master clock to 60Mhz and start U-BOOT\n\r");
+-  //* Reset registers
+-  pPmc->PMC_SCER |= 16;
+-//  getc();
+-
+-  AT91F_ResetRegisters();
++  printf("Starting U-BOOT..\n\r");
+   Jump(AT91C_UBOOT_ADDR);
+   while(1);
+ }
+ 
++inline void delay(unsigned int cycles)
++{
++  volatile unsigned int delay;
++
++  for(delay=0;delay<cycles;delay++);
++}
++
++unsigned short strataflash_block_unlock(unsigned short block_index)
++{
++  volatile int status_retry_counter, addr16;
++  short status;
++
++  addr16 = STRATAFLASH_BASE + (0x55*2);
++  raw_writew(0x50,(void *)0x10000000); // clear status
++  delay(10000);
++
++  // address of the block to read status
++  addr16 = STRATAFLASH_BASE + (block_index * (0x20000));
++  raw_writew(0x60,(void *)addr16); // unlock preparation
++  delay(10000);
++  raw_writew(0xD0,(void *)addr16); // unlock action
++
++  status=0;
++  status_retry_counter = 50;
++  while(status!=0x80 && status_retry_counter>0)
++    {
++      addr16 = STRATAFLASH_BASE + (0x55*2);
++      raw_writew(0x70,(void *)addr16); // ready to read status register
++      status = raw_readw(addr16);
++      delay(10000);
++      status_retry_counter--;
++    }
++  return status;
++}
++
++unsigned short strataflash_block_erase(unsigned short block_index)
++{
++  volatile int status_retry_counter, addr16;
++  short status;
++
++  addr16 = STRATAFLASH_BASE + (0x55*2);
++  raw_writew(0x50,(void *)addr16); // clear status
++  delay(10000);
++
++  // address of the block to read status
++  addr16 = STRATAFLASH_BASE + (block_index * (0x20000));
++  raw_writew(0x20,(void *)addr16); // erase preparation
++  delay(10000);
++  raw_writew(0xD0,(void *)addr16); // erase action
++
++  status=0;
++  status_retry_counter = 200;
++  while(status!=0x80 && status_retry_counter>0)
++    {
++      addr16 = STRATAFLASH_BASE + (0x55*2);
++      raw_writew(0x70,(void *)addr16); // ready to read status register
++      status = raw_readw(addr16);
++      delay(10000);
++      status_retry_counter--;
++    }
++  return status;
++}
++
++unsigned short strataflash_write(unsigned int addr, unsigned int size)
++{
++  volatile unsigned int addr16,index;
++  int status_retry_counter;
++  unsigned short status = 0;
++
++  for(index=0;index<=size;index+=2)
++    {
++      addr16 = STRATAFLASH_BASE + index;
++      raw_writew(0x40,(void *)addr16); // write command
++      raw_writew(*(unsigned short*)(addr+index),(void *)addr16);
++
++      status=0;
++      status_retry_counter = 50;
++      while(status!=0x80 && status_retry_counter>0)
++        {
++          addr16 = STRATAFLASH_BASE + (0x55*2);
++          raw_writew(0x70,(void *)addr16); // ready to read status register
++          status = raw_readw(addr16);
++          delay(100);
++          status_retry_counter--;
++        }
++    
++      if(0 == status_retry_counter)
++        return status;
++    }
++  return status;
++}
++
+ 
+ //*----------------------------------------------------------------------------
+ //* Function Name       : main
+@@ -282,11 +384,16 @@
+   
+   unsigned int AddressToDownload, SizeToDownload;	
+   unsigned int DeviceAddress = 0;
+-  volatile int i = 0;	
+   char command = 0;
+-  unsigned int crc1 = 0, crc2 = 0;
+   volatile int device;
++#ifdef PLC304
++  volatile int index, addr16;
++  unsigned short status;
++#else
++  volatile int i = 0;	
++  unsigned int crc1 = 0, crc2 = 0;
+   int NbPage;
++#endif
+ 
+   stdin = fopen(0, at91_dbgu_getc);
+   stdout = fopen(at91_dbgu_putc, 0);
+@@ -314,10 +421,10 @@
+ 			 AT91F_ST_ASM_Handler );						
+   //* Enable ST interrupt
+   AT91F_AIC_EnableIt(AT91C_BASE_AIC, AT91C_ID_SYS);
+-  
++#ifndef PLC304  
+   //	DataFlash on SPI Configuration
+   AT91F_DataflashInit ();
+-
++#endif
+   // start tempo to start Uboot in a delay of 1 sec if no key pressed
+   svcUbootTempo.Start(&svcUbootTempo, 1000, 0, AT91F_StartUboot, (void *)0);
+ 
+@@ -347,48 +454,108 @@
+ 
+ 	  switch(command)
+ 	    {
++#ifndef PLC304
+ 	    case '1':					
+ 	      printf("Download ROMBOOT to Dataflash\n\r");
+ 	      
+ 	      device = 0;
+ 	      DeviceAddress = 0xc0000000;
+ 	      break;
+-	      
++
+ 	    case '2':
+ 	      printf("Download U-BOOT to Dataflash\n\r");
+-	      
++
+ 	      device = 0;
+ 	      DeviceAddress = 0xc0004000;
+ 	      break;
+-	      
++
+ 	    case '3':
+ 	      AT91F_StartUboot(0, (void *)0);
+ 	      command = 0;
+ 	      break;
+-	      
++#endif
+ 	    case '4':
+ 	    {
++#ifndef PLC304
+ 		int *i;
+ 		for(i = (int *)0x20000000; i < (int *)0x20004000; i++)
+-		    *i = 0;
++		    *i = 0xffffffff;
+ 		
+ 		write_dataflash(0xc0024000, 0x20000000,0x4000);
++#else
++		addr16=(STRATAFLASH_BASE + (0x55*2));
++		raw_writew(0x00ff,(void *)addr16);//read array aka reset
++		//stage 1: unlock blocks to erase
++		status = strataflash_block_unlock(1);
++
++		if(status!=0x80)
++		{
++		    printf("Fatal Error: block unable to unlock\n\r");
++		    goto Error;
++		}
++
++		printf("blocks are unlocked\n\r");
++
++		status = strataflash_block_erase(1);
++
++		if(status!=0x80)
++		{
++		    printf("Fatal Error: block unable to erase\n\r");
++		    goto Error;
++		}
++#endif
+ 		printf("U-BOOT environment cleared\n\r");
+ 		command = 0;
+ 		break;
+ 	    }  
+ 	    case '5':
+ 	    {
+-	        int *i;
+-		for(i = (int *)0x20000000; i < (int *)0x2001000; i++)
+-		    *i = 0xff;
++#ifndef PLC304
++		int *i;
++		for(i = (int *)0x20000000; i < (int *)(0x20000000+USERFS_SIZE); i++)
++		    *i = 0xffffffff;
+ 		
+-		write_dataflash(USERFS_BASE, 0x20000000,0x1000);
+-		printf("User filesystem cleared\n\r");
++		write_dataflash(USERFS_START, 0x20000000,USERFS_SIZE);
++#else
++		addr16=(STRATAFLASH_BASE + (0x55*2));
++		raw_writew(0x00ff,(void *)addr16);//read array aka reset
++		//stage 1: unlock blocks to erase
++		for(index=4;index<123;index++)
++		{
++		    status = strataflash_block_unlock(index);
++
++		    if(status!=0x80)
++		    {
++			printf("Fatal Error: block unable to unlock\n\r");
++			goto Error;
++		    }
++		}
++		printf("blocks are unlocked\n\r");
++
++		//stage 2: erase blocks
++		for(index=4;index<123;index++)
++		{
++		    status = strataflash_block_erase(index);
++
++		    if(status!=0x80)
++		    {
++			printf("Fatal Error: block unable to erase\n\r");
++			goto Error;
++		    }
++		}
++#endif
++		printf("Kernel and filesystem cleared\n\r");
+ 	        command = 0;
+ 	        break;
+ 	    }
+-	    
++#ifdef PLC304
++	    case '6':
++	        printf("Download U-Boot to NOR flash\n\r");
++
++	        device = 0;
++	        DeviceAddress = 0x10000000;
++	        break;
++#endif
+ 	    default:
+ 	      command = 0;
+ 	      break;
+@@ -398,7 +565,7 @@
+       xmodemPipe.Read(&xmodemPipe, (char *)AddressToDownload, SizeToDownload, XmodemProtocol, 0);	
+       while(XmodemComplete !=1);
+       SizeToDownload = (unsigned int)(svcXmodem.pData) - (unsigned int)AddressToDownload;	
+-      
++#ifndef PLC304
+       // Modification of vector 6
+       NbPage = 0;
+       i = dataflash_info[device].Device.pages_number;
+@@ -432,7 +599,48 @@
+ 	printf("Failed\n\r");	
+       else
+ 	printf("OK\n\r");	
+-      
++#else
++      addr16 = STRATAFLASH_BASE + (0x55*2);
++      raw_writew(0x00ff,(void *)addr16);//read array aka reset
++
++      //erasing flash
++      //stage 1: unlock blocks to erase
++      for(index=0;index<3;index++)
++      {
++    	  status = strataflash_block_unlock(index);
++    	  if(status!=0x80)
++    	  {
++    	    printf("Fatal Error: block unable to unlock\n\r");
++    	    goto Error;
++    	  }
++      }
++      printf("3 blocks are unlocked\n\r");
++
++      //stage 2: erase blocks
++      for(index=0;index<3;index++)
++      {
++    	  status = strataflash_block_erase(index);
++	  if(status!=0x80)
++       	  {
++       	    printf("Fatal Error: block unable to erase\n\r");
++       	    goto Error;
++       	  }
++      }
++      printf("3 blocks are erased\n\r");
++
++      //writing u-boot
++      status = strataflash_write(AddressToDownload,SizeToDownload);
++
++      if(status!=0x80)
++      {
++        printf("Fatal Error: word unable to write\n\r");
++        goto Error;
++      }
++
++      printf("writing complete\n\r");
++#endif
++
++Error:
+       command = 0;
+       XmodemComplete = 0;
+       AT91F_WaitKeyPressed();
+diff -Nru romboot-1.0/Makefile romboot-1.0-new/Makefile
+--- a/Makefile	2009-07-14 15:02:43.000000000 +0300
++++ b/Makefile	2010-08-05 21:43:44.000000000 +0300
+@@ -6,9 +6,11 @@
+ OBJCOPY=$(CROSS)objcopy
+ SIZE=$(CROSS)size
+ OBJDUMP=$(CROSS)objdump
+-LDFLAGS=-T elf32-littlearm.lds -Ttext 0
++srcdir=.
++LDFLAGS=-T $(srcdir)/elf32-littlearm.lds -Ttext 0
+ OBJS=cstartup_ram.o asm_isr.o jump.o at45.o com.o dataflash.o init.o main.o stdio.o _udivsi3.o _umodsi3.o div0.o
+ TARGETDIR=plc100
++CFLAGS=-Os -Wall -fno-builtin -I$(srcdir)/include
+ 
+ all: $(TARGET)
+ 
+@@ -20,15 +22,12 @@
+ 	$(OBJCOPY) $(TARGET).out -O binary $(TARGET).bin
+ 	$(OBJDUMP) -h -s $(TARGET).out > $(TARGET).lss
+ 	$(SIZE) $(TARGET).out
+-	chmod 644 $(TARGET).bin
+-	cp -f $(TARGET).bin /mnt/hd/owen/$(TARGETDIR)
+-	cp -f $(TARGET).bin /home/owen/$(TARGETDIR)
+ 
+-.c.o:
+-	$(GCC) $(CFLAGS) -c -Iinclude -Os $< -o $@
++%.o: $(srcdir)/%.c
++	$(GCC) $(CFLAGS) -march=armv4 -c $< -o $@
+ 
+-.cpp.o:
+-	$(GCC) $(CFLAGS) -c -Iinclude -Os $< -o $@
++%.o: $(srcdir)/%.cpp
++	$(GCC) $(CFLAGS) -march=armv4 -c $< -o $@
+ 
+-.S.o:
+-	$(GCC) $(CFLAGS) -c -Iinclude $< -o $@
++%.o: $(srcdir)/%.S
++	$(GCC) $(CFLAGS) -c $< -o $@
+diff -Nru romboot-1.0/owen-release.h romboot-1.0-new/owen-release.h
+--- a/owen-release.h	1970-01-01 03:00:00.000000000 +0300
++++ b/owen-release.h	2010-05-31 22:10:26.000000000 +0300
+@@ -0,0 +1,6 @@
++#ifndef __OWEN_RELEASE_H
++#define __OWEN_RELEASE_H
++
++#define OWEN_RELEASE "OWEN-20100531-1599"
++
++#endif
+diff -Nru romboot-1.0/sysconfig.h romboot-1.0-new/sysconfig.h
+--- a/sysconfig.h	2009-07-21 10:32:23.000000000 +0300
++++ b/sysconfig.h	2010-08-06 12:16:24.000000000 +0300
+@@ -4,6 +4,22 @@
+ #define PLLA_VAL     0x202c8f04
+ #define PLLA_MCK     0x202	  // processor clock = master_clock * 3
+ 
++#define PLC304
++#define RAM_SIZE_8M
++#define STRATAFLASH_BASE 0x10000000
++
++#if defined(PLC304)
++#define USERFS_BASE  0x28380
++#define USERFS_START 0x10028380
++#define MASTER_CLOCK 48000000
++#define REFRESH_TIME 249
++#else
++#define USERFS_BASE  0x28380
++#define USERFS_START 0xC0028380
++#define MASTER_CLOCK 60000000
++#define REFRESH_TIME 0x2e0
++#endif
++
+ #if defined(RAM_SIZE_16M)
+ // XTAL f=16MHZ!!!
+ // for 180 mhz:
+@@ -14,13 +30,13 @@
+ // multiplier value = 25 (MULA = 0x18)
+ //#define PLLA_VAL     0x20188f02
+ #define SDRAM_CFG    0x33224AD4
+-#define USERFS_BASE  0xc03a0200
+ #define AT91C_UBOOT_ADDR 0x20FD0000
++#define USERFS_SIZE  0x800000 - USERFS_BASE
+ #else
+ //#define PLLA_VAL     0x20188f02
+ #define SDRAM_CFG    0x33224AD0
+-#define USERFS_BASE  0xc0209d00
+ #define AT91C_UBOOT_ADDR 0x207D0000
++#define USERFS_SIZE  0x400000 - USERFS_BASE
+ #endif
+ 
+ #endif

@@ -1,0 +1,39 @@
+#!/bin/sh
+
+MOUNT_ROOT=/mnt/ufs/media
+#FS_ORDER="vfat ntfs"
+FS_ORDER="vfat"
+
+if [ "$1" == "" ]; then
+	exit 1
+fi
+
+if [ "$ACTION" == "add" ]; then
+	unset is_ok
+	mkdir -p $MOUNT_ROOT/$1
+	for fs in $FS_ORDER; do
+		#echo -n "try mounting as $fs..."
+		FS_OPTS="-o sync"
+		count=3
+		while [ $count -gt 0 ]; do
+			mount -t $fs $FS_OPTS /dev/$1 $MOUNT_ROOT/$1 && {
+                              is_ok=1
+                              break
+                        }
+			usleep 500000
+			count=$((count-1))
+		done
+		[ -n "$is_ok" ] && break
+	done
+	[ -z "$is_ok" ] && {
+		rmdir $MOUNT_ROOT/$1
+		exit 2
+        }
+else
+	if [ "$ACTION" == "remove" ]; then
+		umount $MOUNT_ROOT/$1
+		rmdir $MOUNT_ROOT/$1
+	fi
+fi
+
+exit 0

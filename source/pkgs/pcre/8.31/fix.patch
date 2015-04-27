@@ -1,0 +1,13 @@
+--- a/Makefile.in	2012-07-06 12:55:28.000000000 +0300
++++ b/Makefile.in	2012-08-16 14:14:05.000000000 +0300
+@@ -631,8 +631,8 @@
+ 
+ # These are the header files we'll install. We do not distribute pcre.h because
+ # it is generated from pcre.h.in.
+-nodist_include_HEADERS = pcre.h $(am__append_1)
+-include_HEADERS = pcreposix.h $(am__append_2)
++nodist_include_HEADERS = $(am__append_1)
++include_HEADERS = pcre.h pcreposix.h $(am__append_2)
+ bin_SCRIPTS = pcre-config
+ @WITH_REBUILD_CHARTABLES_TRUE@dftables_SOURCES = dftables.c
+ BUILT_SOURCES = pcre_chartables.c

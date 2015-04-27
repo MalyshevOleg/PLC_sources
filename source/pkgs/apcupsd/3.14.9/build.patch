@@ -1,0 +1,60 @@
+diff -Nru apcupsd-3.14.8-orig/autoconf/config.sub apcupsd-3.14.8/autoconf/config.sub
+--- apcupsd-3.14.8-orig/autoconf/config.sub	2002-05-28 16:34:17.000000000 +0300
++++ apcupsd-3.14.8/autoconf/config.sub	2010-06-30 17:44:09.000000000 +0300
+@@ -117,7 +117,7 @@
+ # Here we must recognize all the valid KERNEL-OS combinations.
+ maybe_os=`echo $1 | sed 's/^\(.*\)-\([^-]*-[^-]*\)$/\2/'`
+ case $maybe_os in
+-  nto-qnx* | linux-gnu* | storm-chaos* | os2-emx* | windows32-*)
++  nto-qnx* | linux-gnu* | linux-uclibc* | storm-chaos* | os2-emx* | windows32-*)
+     os=-$maybe_os
+     basic_machine=`echo $1 | sed 's/^\(.*\)-\([^-]*-[^-]*\)$/\1/'`
+     ;;
+@@ -1032,7 +1032,7 @@
+ 	      | -udi* | -eabi* | -lites* | -ieee* | -go32* | -aux* \
+ 	      | -chorusos* | -chorusrdb* \
+ 	      | -cygwin* | -pe* | -psos* | -moss* | -proelf* | -rtems* \
+-	      | -mingw32* | -linux-gnu* | -uxpv* | -beos* | -mpeix* | -udk* \
++	      | -mingw32* | -linux-gnu* | -linux-uclibc* | -uxpv* | -beos* | -mpeix* | -udk* \
+ 	      | -interix* | -uwin* | -rhapsody* | -darwin* | -opened* \
+ 	      | -openstep* | -oskit* | -conix* | -pw32* | -nonstopux* \
+ 	      | -storm-chaos* | -tops10* | -tenex* | -tops20* | -its* | -os2*)
+diff -Nru apcupsd-3.14.8-orig/configure apcupsd-3.14.8/configure
+--- apcupsd-3.14.8-orig/configure	2010-01-10 22:05:31.000000000 +0200
++++ apcupsd-3.14.8/configure	2010-06-30 17:59:05.000000000 +0300
+@@ -1386,7 +1386,7 @@
+ 
+ topdir=`pwd`
+ ac_aux_dir=
+-for ac_dir in ${topdir}/autoconf $srcdir/${topdir}/autoconf; do
++for ac_dir in ${topdir}/autoconf $srcdir/autoconf; do
+   if test -f $ac_dir/install-sh; then
+     ac_aux_dir=$ac_dir
+     ac_install_sh="$ac_aux_dir/install-sh -c"
+@@ -4820,15 +4820,10 @@
+ fi
+ done
+      echo "$as_me:$LINENO: checking whether setpgrp takes no argument" >&5
+-echo $ECHO_N "checking whether setpgrp takes no argument... $ECHO_C" >&6
+-if test "${ac_cv_func_setpgrp_void+set}" = set; then
++ echo $ECHO_N "checking whether setpgrp takes no argument... $ECHO_C" >&6
++ if test "${ac_cv_func_setpgrp_void+set}" = set; then
+   echo $ECHO_N "(cached) $ECHO_C" >&6
+-else
+-  if test "$cross_compiling" = yes; then
+-  { { echo "$as_me:$LINENO: error: cannot check setpgrp when cross compiling" >&5
+-echo "$as_me: error: cannot check setpgrp when cross compiling" >&2;}
+-   { (exit 1); exit 1; }; }
+-else
++ else
+   cat >conftest.$ac_ext <<_ACEOF
+ /* confdefs.h.  */
+ _ACEOF
+@@ -4872,7 +4867,6 @@
+ fi
+ rm -f core *.core gmon.out bb.out conftest$ac_exeext conftest.$ac_objext conftest.$ac_ext
+ fi
+-fi
+ echo "$as_me:$LINENO: result: $ac_cv_func_setpgrp_void" >&5
+ echo "${ECHO_T}$ac_cv_func_setpgrp_void" >&6
+ if test $ac_cv_func_setpgrp_void = yes; then

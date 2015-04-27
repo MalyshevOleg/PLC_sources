@@ -1,0 +1,2 @@
+#!/bin/sh
+cat /proc/cmdline | grep 'spk2xx=' | sed -r 's,^.*spk2xx=([^ ]*).*$,\1,'

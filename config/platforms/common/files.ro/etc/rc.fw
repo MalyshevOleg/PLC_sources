@@ -1,0 +1,130 @@
+#!/bin/sh
+
+. /etc/network/common.sh
+. $file_network_conf
+
+export PATH=/usr/sbin:/sbin:$PATH
+
+arg=$1; shift
+
+prepare_chains() {
+	echo "fw: creating chains"
+	iptables	-t filter	-N $chain_input
+	iptables	-t filter	-N $chain_forward
+	iptables	-t nat		-N $chain_nat
+
+	echo "fw: adding default rules"
+	iptables	-t filter	-A INPUT -i lo -j ACCEPT
+	iptables	-t filter	-A INPUT -j $chain_input
+
+	iptables	-t filter	-A FORWARD -j $chain_forward
+	iptables	-t filter	-A FORWARD -j DROP
+
+	iptables	-t nat		-A POSTROUTING -j $chain_nat
+
+	iptables	-t filter 	-A INPUT -i $eth_iface -j ACCEPT
+	[ -n "$eth_iface2" ] && iptables	-t filter 	-A INPUT -i $eth_iface2 -j ACCEPT
+	iptables	-t filter	-A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+	echo "fw: creating drop rules"
+	# drop all incoming packets except from internal network
+	iptables	-t filter	-A INPUT -j DROP
+}
+
+delete_chain() {
+	case $1 in
+		INPUT|FORWARD|PREROUTING|POSTROUTING|MANGLE|OUTPUT) iptables ${2:+-t $2} -F $1;;
+		*) iptables ${2:+-t $2} -F $1;iptables ${2:+ -t $2} -X $1;;
+	esac
+}
+
+clear_chains() {
+	delete_chain INPUT
+	delete_chain FORWARD
+	delete_chain PREROUTING nat
+	delete_chain POSTROUTING nat
+	delete_chain $chain_input
+	delete_chain $chain_forward
+	delete_chain $chain_nat nat
+}
+
+add_rule() {
+	local dport=""
+	if [ -n "$3" -a "$3" != "%"  ]; then
+		dport="--dport=$3"
+	fi
+	if [ "$2" == "all" ]; then
+		iptables -t filter -A $chain_input -p tcp $dport ${4:+--source=$4} -j $1
+		iptables -t filter -A $chain_input -p udp $dport ${4:+--source=$4} -j $1
+	else
+		iptables -t filter -A $chain_input -p $2 $dport ${4:+--source=$4} -j $1
+	fi
+}
+
+update_ports() {
+	[ -f $file_firewall_conf ] || return
+	local h
+	local saveIFS=$IFS
+	while read line; do
+		local line=${line// /}
+		line=${line//\*/%}
+		line=${line%%#*}
+		[ -n "$line" ] || continue
+		local proto=${line%%=*}
+		IFS=","
+		set ${line#*=} 
+		local port=$1
+		shift
+		local target=ACCEPT
+		[ "$1" = "on" ] && target=DROP
+		shift
+		if [ $# -gt 0 ]; then
+			for h in $*; do
+				add_rule $target $proto $port $h
+			done
+		else
+			add_rule $target $proto $port
+		fi
+	done < $file_firewall_conf
+	IFS=$saveIFS
+}
+
+clear_ports() {
+	iptables -t filter -F $chain_input
+}
+
+case $arg in
+	start) 
+		prepare_chains
+		update_ports
+	;;
+	stop)
+		clear_ports
+		clear_chains
+	;;
+	inet-up|inet-down)
+		ppp_iface=$1
+		[ "$GPRS_ROUTER" = "1" ] || exit 0
+		echo 1 > /proc/sys/net/ipv4/ip_forward    # Enables packet forwarding by kernel
+		chain_cmd="-A"
+		[ "$arg" = "inet-down" ] && chain_cmd="-D"
+
+		iptables -t nat $chain_cmd $chain_nat -o $ppp_iface -j MASQUERADE >>$file_log 2>&1
+		iptables -t filter $chain_cmd $chain_forward -i $ppp_iface -o $eth_iface -m state --state RELATED,ESTABLISHED -j ACCEPT >>$file_log 2>&1
+		iptables -t filter $chain_cmd $chain_forward -i $eth_iface -o $ppp_iface -j ACCEPT >>$file_log 2>&1
+		[ -n "$eth_iface2" ] && {
+			iptables -t filter $chain_cmd $chain_forward -i $eth_iface2 -o $ppp_iface -j ACCEPT >>$file_log 2>&1
+			iptables -t filter $chain_cmd $chain_forward -i $ppp_iface -o $eth_iface2 -m state --state RELATED,ESTABLISHED -j ACCEPT >>$file_log 2>&1
+		}
+	;;
+	reload)
+		clear_chains
+		prepare_chains
+		update_ports
+	;;
+	reload-ports)
+		clear_ports
+		update_ports
+	;;	
+	*)
+	;;
+esac

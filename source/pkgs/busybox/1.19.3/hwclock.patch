@@ -1,0 +1,11 @@
+--- a/util-linux/hwclock.c	2010-06-12 16:50:30.000000000 +0300
++++ b/util-linux/hwclock.c	2010-06-29 19:19:20.000000000 +0300
+@@ -152,7 +152,7 @@
+ 	 * to sync. Even straced one on the same qemu (very slow)
+ 	 * takes only 4 tries.
+ 	 */
+-#define TWEAK_USEC 256
++#define TWEAK_USEC 1024
+ 	unsigned adj = TWEAK_USEC;
+ 	struct tm tm_time;
+ 	struct timeval tv;

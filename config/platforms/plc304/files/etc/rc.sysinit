@@ -1,0 +1,26 @@
+#!/bin/sh
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin
+export LD_LIBRARY_PATH=/usr/local/lib
+
+RELEASE=`cat /etc/RELEASE`
+
+echo "system release is '${RELEASE}'" > /dev/console
+
+. /etc/rc.fs
+
+# ppp_generic should be loaded before pppd is used (from rc.net)
+/sbin/modprobe ppp
+
+/etc/rc.net start
+
+#/sbin/clkctl
+
+# Load ohci_hcd (and mmc modules) after userfs is mounted !!!
+# (if USB storage was inserted before boot starts)
+modprobe ohci_hcd
+modprobe at91_mci
+modprobe mmc_block
+
+if [ -x /etc/rc.local ]; then
+    . /etc/rc.local
+fi

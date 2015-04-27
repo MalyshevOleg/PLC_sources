@@ -1,0 +1,34 @@
+--- termcap-1/Makefile.in	1995-08-17 03:54:29.000000000 +0300
++++ termcap-2/Makefile.in	2010-01-11 15:37:01.000000000 +0200
+@@ -46,7 +46,7 @@
+ # so compilers besides gcc can find it by default.
+ # If it is empty or not defined, termcap.h will only be installed in
+ # includedir. 
+-oldincludedir = /usr/include
++oldincludedir =
+ 
+ # Directory in which to install the documentation info files.
+ infodir = $(prefix)/info
+@@ -77,13 +77,10 @@
+ 	cd $(srcdir); $(INSTALL_DATA) termcap.h $(includedir)/termcap.h
+ 	-cd $(srcdir); test -z "$(oldincludedir)" || \
+ 	  $(INSTALL_DATA) termcap.h $(oldincludedir)/termcap.h
+-	cd $(srcdir); for f in termcap.info*; \
+-	do $(INSTALL_DATA) $$f $(infodir)/$$f; done
+ 
+ uninstall: @uninstalldata@
+ 	rm -f $(libdir)/libtermcap.a $(includedir)/termcap.h
+ 	test -z "$(oldincludedir)" || rm -f $(oldincludedir)/termcap.h
+-	rm -f $(infodir)/termcap.info*
+ 
+ # These are separate targets to avoid trashing the user's existing
+ # termcap file unexpectedly.
+@@ -95,7 +92,7 @@
+ 
+ installdirs:
+ 	$(SHELL) ${srcdir}/mkinstalldirs $(bindir) $(libdir) \
+-	$(includedir) $(infodir)
++	$(includedir)
+ 
+ Makefile: Makefile.in config.status
+ 	$(SHELL) config.status

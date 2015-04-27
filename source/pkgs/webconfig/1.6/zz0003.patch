@@ -1,0 +1,11 @@
+diff -uNr webconfig-1.6.old/wc/wc_config.h webconfig-1.6/wc/wc_config.h
+--- webconfig-1.6.old/wc/wc_config.h	2014-03-25 11:02:49.585084167 +0400
++++ webconfig-1.6/wc/wc_config.h	2014-03-25 11:04:02.593088692 +0400
+@@ -74,6 +74,7 @@
+ #define WC_CONFIG_NO_AUTO_GPRS
+ #define WC_CONFIG_MENU_NET_VPN
+ #define WC_CONFIG_MENU_NET_DDNS
++#define WC_CONFIG_MENU_NET_WD
+ #define WC_CONFIG_MENU_UTILS_PING
+ 
+ /* --- default ---*/

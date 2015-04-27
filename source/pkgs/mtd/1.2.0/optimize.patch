@@ -1,0 +1,62 @@
+--- mtd-1/Makefile	2008-06-27 19:21:28.000000000 +0300
++++ mtd-2/Makefile	2009-05-06 14:37:27.000000000 +0300
+@@ -4,12 +4,14 @@
+ SBINDIR=/usr/sbin
+ MANDIR=/usr/share/man
+ INCLUDEDIR=/usr/include
++SRCDIR :=.
+ 
+ #CROSS=arm-linux-
+ CC := $(CROSS)gcc
+ CFLAGS ?= -O2 -g
+ CFLAGS += -Wall
+-CPPFLAGS += -I./include
++CPPFLAGS += -I$(SRCDIR) -I$(SRCDIR)/include
++STRIP := $(CROSS)strip
+ 
+ ifeq ($(origin CROSS),undefined)
+   BUILDDIR := .
+@@ -32,20 +34,21 @@
+ 	sumtool #jffs2reader
+ 
+ TARGETS = $(foreach target,$(RAWTARGETS),$(BUILDDIR)/$(target))
++HOSTTARGETS = $(BUILDDIR)/mkfs.jffs2
+ 
+ SYMLINKS =
+ 
+-%: %.o
+-	$(CC) $(CFLAGS) $(LDFLAGS) -g -o $@ $^
++$(BUILDDIR)/%: $(BUILDDIR)/%.o
++	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+ 
+-$(BUILDDIR)/%.o: %.c
++$(BUILDDIR)/%.o: $(SRCDIR)/%.c
+ 	mkdir -p $(BUILDDIR)
+-	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $< -g -Wp,-MD,$(BUILDDIR)/.$(<F).dep
++	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $< -Wp,-MD,$(BUILDDIR)/.$(<F).dep
+ 
+ .SUFFIXES:
+ 
+ all: $(TARGETS)
+-	make -C $(BUILDDIR)/ubi-utils
++#	make -C $(BUILDDIR)/ubi-utils
+ 
+ IGNORE=${wildcard $(BUILDDIR)/.*.c.dep}
+ -include ${IGNORE}
+@@ -88,11 +91,12 @@
+ $(BUILDDIR)/fectest: $(BUILDDIR)/fectest.o $(BUILDDIR)/crc32.o $(BUILDDIR)/fec.o
+ 	$(CC) $(LDFLAGS) -o $@ $^
+ 
+-
++install-host: ${HOSTTARGETS}
++	mkdir -p ${DESTDIR}/bin
++	$(STRIP) ${HOSTTARGETS}
++	install -m0755 ${HOSTTARGETS} ${DESTDIR}/bin/
+ 
+ install: ${TARGETS}
+ 	mkdir -p ${DESTDIR}/${SBINDIR}
++	$(STRIP) ${TARGETS}
+ 	install -m0755 ${TARGETS} ${DESTDIR}/${SBINDIR}/
+-	mkdir -p ${DESTDIR}/${MANDIR}/man1
+-	gzip -9c mkfs.jffs2.1 > ${DESTDIR}/${MANDIR}/man1/mkfs.jffs2.1.gz
+-	make -C $(BUILDDIR)/ubi-utils install

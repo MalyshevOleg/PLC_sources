@@ -1,0 +1,21 @@
+diff -Naur a/util-linux/hwclock.c b/util-linux/hwclock.c
+--- a/util-linux/hwclock.c	2015-01-26 20:16:41.000000000 +0200
++++ b/util-linux/hwclock.c	2015-01-26 20:23:17.000000000 +0200
+@@ -22,7 +22,7 @@
+  * and hw clock. It is useful, but not compatible with standard hwclock.
+  * Thus disabled.
+  */
+-#define SHOW_HWCLOCK_DIFF 0
++#define SHOW_HWCLOCK_DIFF 1
+ 
+ 
+ #if !SHOW_HWCLOCK_DIFF
+@@ -108,7 +108,7 @@
+ 
+ static void from_sys_clock(const char **pp_rtcname, int utc)
+ {
+-#if 1
++#if 0
+ 	struct timeval tv;
+ 	struct tm tm_time;
+ 	int rtc;

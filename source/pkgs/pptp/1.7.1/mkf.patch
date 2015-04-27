@@ -1,0 +1,30 @@
+--- a/Makefile	2006-02-13 05:07:42.000000000 +0200
++++ b/Makefile	2012-03-15 16:41:31.000000000 +0200
+@@ -11,11 +11,14 @@
+ MANDIR=$(DESTDIR)/usr/share/man/man8
+ PPPDIR=$(DESTDIR)/etc/ppp
+ 
+-CC	= gcc
++SRCDIR=.
++VPATH=$(SRCDIR)
++
++CC	?= gcc
+ RM	= rm -f
+-OPTIMIZE= -O0
+-DEBUG	= -g
+-INCLUDE =
++OPTIMIZE= -O2
++DEBUG	=
++INCLUDE = -I. -I$(SRCDIR)
+ CFLAGS  = -Wall $(OPTIMIZE) $(DEBUG) $(INCLUDE)
+ LIBS	= -lutil
+ LDFLAGS	=
+@@ -56,8 +59,6 @@
+ install:
+ 	mkdir -p $(BINDIR)
+ 	install -o root -m 555 pptp $(BINDIR)
+-	mkdir -p $(MANDIR)
+-	install -m 644 pptp.8 $(MANDIR)
+ 	mkdir -p $(PPPDIR)
+ 	install -m 644 options.pptp $(PPPDIR)
+ 

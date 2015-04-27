@@ -1,0 +1,12 @@
+diff -uNr mtd-utils-1.4.9_orig/Makefile mtd-utils-1.4.9/Makefile
+--- mtd-utils-1.4.9_orig/Makefile	2014-12-04 12:34:15.555754972 +0400
++++ mtd-utils-1.4.9/Makefile	2014-12-04 12:35:00.699759168 +0400
+@@ -6,7 +6,7 @@
+ CPPFLAGS += -I./include -I$(BUILDDIR)/include -I./ubi-utils/include $(ZLIBCPPFLAGS) $(LZOCPPFLAGS)
+ 
+ ifeq ($(WITHOUT_XATTR), 1)
+-  CPPFLAGS += -DWITHOUT_XATTR
++  CPPFLAGS += -DWITHOUT_XATTR=1
+ endif
+ ifeq ($(WITHOUT_LZO), 1)
+   CPPFLAGS += -DWITHOUT_LZO

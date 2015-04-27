@@ -1,0 +1,29 @@
+diff -urN a/tests/fbutils.c b/tests/fbutils.c
+--- a/tests/fbutils.c	2006-08-25 00:02:55.000000000 +0300
++++ b/tests/fbutils.c	2010-09-14 17:32:02.000000000 +0300
+@@ -247,6 +247,7 @@
+         	        perror("ioctl FBIOPUTCMAP");
+ 		break;
+ 	case 2:
++	case 3:
+ 	case 4:
+ 		red = (value >> 16) & 0xff;
+ 		green = (value >> 8) & 0xff;
+@@ -274,6 +275,17 @@
+ 		else
+ 			*loc.p16 = color;
+ 		break;
++	case 3:
++		if (xormode) {
++			loc.p8[0] ^= ((unsigned char*)&color)[0];
++			loc.p8[1] ^= ((unsigned char*)&color)[1];
++			loc.p8[2] ^= ((unsigned char*)&color)[2];
++		} else {
++			loc.p8[0] = ((unsigned char*)&color)[0];
++			loc.p8[1] = ((unsigned char*)&color)[1];
++			loc.p8[2] = ((unsigned char*)&color)[2];
++		}
++		break;
+ 	case 4:
+ 		if (xormode)
+ 			*loc.p32 ^= color;

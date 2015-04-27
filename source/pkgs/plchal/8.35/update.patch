@@ -1,0 +1,371 @@
+Index: gpio.c
+===================================================================
+--- a/gpio.c	(revision 343)
++++ b/gpio.c	(revision 1312)
+@@ -244,8 +244,8 @@
+   { PLC_INPUT,  "DI5",    AT91RM9200_ID_PIOB, AT91_PIN_PB8,  ~0 },
+   { PLC_INPUT,  "DI6",    AT91RM9200_ID_PIOB, AT91_PIN_PB9,  ~0 },
+   { PLC_INPUT,  "DI7",    AT91RM9200_ID_PIOB, AT91_PIN_PB10, ~0 },
+-  { PLC_INPUT,  "DI8",    AT91RM9200_ID_PIOB, AT91_PIN_PB11, ~0 },
+-  { PLC_INPUT,  "PWR_STA",AT91RM9200_ID_PIOB, AT91_PIN_PB29, ~0 } };
++  { PLC_INPUT,  "DI8",    AT91RM9200_ID_PIOB, AT91_PIN_PB11, ~0 }/*,
++  { PLC_INPUT,  "PWR_STA",AT91RM9200_ID_PIOB, AT91_PIN_PB29, ~0 }*/ };
+ 
+ static struct GPIO_DESCRIPTOR gpio_ports_plc110_60[] = {
+   /* output */
+@@ -289,8 +289,8 @@
+   { PLC_INPUT,  "DI33",   AT91RM9200_ID_PIOC, AT91_PIN_PC12, ~0 },
+   { PLC_INPUT,  "DI34",   AT91RM9200_ID_PIOC, AT91_PIN_PC13, ~0 },
+   { PLC_INPUT,  "DI35",   AT91RM9200_ID_PIOC, AT91_PIN_PC14, ~0 },
+-  { PLC_INPUT,  "DI36",   AT91RM9200_ID_PIOC, AT91_PIN_PC15, ~0 },
+-  { PLC_INPUT,  "PWR_STA",AT91RM9200_ID_PIOB, AT91_PIN_PB29, ~0 } };
++  { PLC_INPUT,  "DI36",   AT91RM9200_ID_PIOC, AT91_PIN_PC15, ~0 }/*,
++  { PLC_INPUT,  "PWR_STA",AT91RM9200_ID_PIOB, AT91_PIN_PB29, ~0 }*/};
+ 
+ static struct GPIO_DESCRIPTOR gpio_ports_plc110_32[] = {
+   /* output */
+@@ -316,8 +316,8 @@
+   { PLC_INPUT,  "DI15",   AT91RM9200_ID_PIOB, AT91_PIN_PB10, ~0 },
+   { PLC_INPUT,  "DI16",   AT91RM9200_ID_PIOB, AT91_PIN_PB11, ~0 },
+   { PLC_INPUT,  "DI17",   AT91RM9200_ID_PIOB, AT91_PIN_PB23, ~0 },
+-  { PLC_INPUT,  "DI18",   AT91RM9200_ID_PIOB, AT91_PIN_PB24, ~0 },
+-  { PLC_INPUT,  "PWR_STA",AT91RM9200_ID_PIOB, AT91_PIN_PB29, ~0 } };
++  { PLC_INPUT,  "DI18",   AT91RM9200_ID_PIOB, AT91_PIN_PB24, ~0 }/*,
++  { PLC_INPUT,  "PWR_STA",AT91RM9200_ID_PIOB, AT91_PIN_PB29, ~0 }*/ };
+ 
+ // PLC300 aka M501
+ static struct GPIO_DESCRIPTOR gpio_ports_plc300[] = 
+@@ -407,7 +407,21 @@
+   { PLC_OUTPUT, "LEDR",   AT91RM9200_ID_PIOD, AT91_PIN_PD6,  ~0 },
+  };
+ 
++// PLC304
++static struct GPIO_DESCRIPTOR gpio_ports_plc304[] =
++ {
++  /* leds */
++  { PLC_OUTPUT, "LED0",   AT91RM9200_ID_PIOB, AT91_PIN_PB22,  ~0 },
++  { PLC_OUTPUT, "LED1",   AT91RM9200_ID_PIOB, AT91_PIN_PB27,  ~0 },
++  { PLC_OUTPUT, "LED2",   AT91RM9200_ID_PIOB, AT91_PIN_PB28,  ~0 },
++  { PLC_OUTPUT, "LED3",   AT91RM9200_ID_PIOD, AT91_PIN_PD26,  ~0 },
++  { PLC_OUTPUT, "LED4",   AT91RM9200_ID_PIOB, AT91_PIN_PB2,   ~0 },
++  /* input */
++  { PLC_INPUT,  "DI0",    AT91RM9200_ID_PIOC, AT91_PIN_PC1, ~0 },
++  { PLC_INPUT,  "DI1",    AT91RM9200_ID_PIOC, AT91_PIN_PC2, ~0 },
++ };
+ 
++
+ static struct GPIO_MAP gpio_arch_map[] = {
+   { ARCH_PLC_100_RELAY,
+     ARCH_MAP(gpio_ports_plc100_relay),
+@@ -421,6 +435,10 @@
+     ARCH_MAP(gpio_ports_plc110_60),
+     MAX_PIO_REGIONS_PLC100
+   },
++  { ARCH_PLC_110_32,
++    ARCH_MAP(gpio_ports_plc110_32),
++    MAX_PIO_REGIONS_PLC100
++  },
+   { ARCH_PLC_300, 
+     ARCH_MAP(gpio_ports_plc300),
+     MAX_PIO_REGIONS_PLC300
+@@ -429,6 +447,10 @@
+     ARCH_MAP(gpio_ports_plc308),
+     MAX_PIO_REGIONS_PLC300
+   },
++  { ARCH_PLC_304,
++    ARCH_MAP(gpio_ports_plc304),
++    MAX_PIO_REGIONS_PLC300
++  },
+ };
+ 
+ 
+@@ -601,7 +623,7 @@
+   io = (struct GPIO_DESCRIPTOR *)descriptor;
+   FILE *pFile=NULL;
+   char *pPath=NULL;
+-  int ret;
++  int ret = -1, i;
+ 
+   io = (struct GPIO_DESCRIPTOR *)descriptor;
+ 
+@@ -610,11 +632,19 @@
+   sprintf(pPath,"/sys/class/gpio/gpio%d/value",io->io_val);
+   pFile=fopen(pPath,"r");
+ 
+-  if(NULL == pFile)
++  if (NULL == pFile)
+   {
+-	  ret = __plc_gpio_set_dir(descriptor, PLC_INPUT);
+-	  if(ret)
+-		  RETURN(ret,ret);
++	ret = __plc_gpio_set_dir(descriptor, PLC_INPUT);
++	if(ret)
++	{
++		RETURN(ret,ret);
++	}
++
++	pFile=fopen(pPath,"r");
++	if (NULL == pFile)
++	{
++		RETURN(ENOENT, ENOENT);
++	}
+   }
+ 
+   if (fscanf(pFile,"%d",value) < 1)
+@@ -632,9 +662,10 @@
+ static int __plc_gpio_read_multi(int count, void **descriptors, void **values)
+ {
+   int i;
+-  
+   for (i = 0; i < count; i++)
+-    __plc_gpio_read(descriptors[i],values[i]);
++  {
++    __plc_gpio_read(descriptors[i],(void *)(values+i));
++  }
+ 
+   RETURN(0, count);
+ }
+@@ -668,7 +699,7 @@
+ static int __plc_gpio_set_dir(void *descriptor, int dir)
+ {
+   struct GPIO_DESCRIPTOR *io;
+-  int base=0, value=0;
++  int base=0, value=0, ret;
+   char *pPath=NULL,*cmd=NULL;
+   FILE *pFile=NULL;
+ 
+@@ -676,11 +707,21 @@
+   io = (struct GPIO_DESCRIPTOR *)descriptor;
+ 
+   DTRACE(("gpio_set_dir: before cur_dir = %d, new_dir = %d", io->cur_dir, dir));
++  //DTRACE(("gpio_set_dir: setup %s state to gpio %d",io->io_val, (dir== PLC_INPUT)?"input":"output"));
++  cmd=realloc(cmd,strlen("echo \"255\" > ")+FILENAME_MAX+1);
++  value = sprintf(cmd,"echo \"%d\" > %s",io->io_val,FILE_TO_EXPORT);
++  DTRACE(("gpio_set_dir: sprintf retrurned %d",value));
++
++  ret = system(cmd);
++  if( ret < 0 )
++  {
++  	DTRACE(("gpio_set_dir: error while creating gpio%d interface, ret= %d ", io->io_val, ret));
++  	RETURN(EIO,EIO);
++  }
++  else
++	  DTRACE(("command system returned %d\n", ret));
++
+   if (dir == PLC_INPUT) {
+-	DTRACE(("gpio_set_dir: setup INPUT state to gpio %d",io->io_val));
+-    cmd=realloc(cmd,strlen("echo \"255\" > ")+FILENAME_MAX+1);
+-    value = sprintf(cmd,"echo \"%d\" > %s",io->io_val,FILE_TO_EXPORT);
+-    DTRACE(("gpio_set_dir: sprintf retrurned %d",value));
+ 
+ 	pPath=NULL;
+ 	pPath=realloc(pPath,FILENAME_MAX);
+@@ -694,9 +735,10 @@
+ 		RETURN(ENOENT,ENOENT);
+ 	}
+ 
+-	if(fprintf(pFile,"%s","in")<3)
++	ret = fprintf(pFile,"%s","in");
++	if( ret<2 )
+ 	{
+-		DTRACE(("gpio_set_dir: can't setup IN direction to gpio %d",io->io_val));
++		DTRACE(("gpio_set_dir: can't setup IN direction to gpio %d, ret = %d",io->io_val, ret));
+ 		RETURN(EIO,EIO);
+ 	}
+ 	fclose(pFile);
+@@ -704,16 +746,6 @@
+ 
+   } else if (dir == PLC_OUTPUT) {
+ 
+-	DTRACE(("gpio_set_dir: setup OUTPUT state to gpio %d",io->io_val));
+-    cmd=realloc(cmd,strlen("echo \"255\" > ")+FILENAME_MAX+1);
+-    value = sprintf(cmd,"echo \"%d\" > %s",io->io_val,FILE_TO_EXPORT);
+-
+-    if( system(cmd) != 0 )
+-    {
+-    	DTRACE(("gpio_set_dir: error while creating gpio%d interface ", io->io_val));
+-    	RETURN(EIO,EIO);
+-    }
+-
+ 	pPath=NULL;
+ 	pPath=realloc(pPath,FILENAME_MAX);
+ 
+Index: twi_l0.c
+===================================================================
+--- a/twi_l0.c	(revision 343)
++++ b/twi_l0.c	(revision 1312)
+@@ -101,7 +101,7 @@
+ 
+ 	  msgset.nmsgs = 1;
+ 	  size = write(fd,&msgset,sizeof(msgset));
+-	  if(size != i2c_msg[0].len)
++	  if(size != 8)//i2c_msg[0].len)
+ 	  {
+ 		  if(0xfffe==size)
+ 		  {
+@@ -116,7 +116,7 @@
+ 	  {
+ 		  msgset.nmsgs++;
+ 		  size = write(fd,&msgset,sizeof(msgset));
+-		  if(size != i2c_msg[1].len)
++		  if(size != 8)//i2c_msg[1].len)
+ 		  {
+ 			  if(size==0xfffe)
+ 			  {
+Index: supervisor.c
+===================================================================
+--- a/supervisor.c	(revision 343)
++++ b/supervisor.c	(revision 1312)
+@@ -19,8 +19,9 @@
+ #define PLC_IOCTL_SV_UNREGISTER _IOW(PLC_IOCTL_BASE, 4, 0)
+ #define PLC_IOCTL_SET_STARTUP   _IOW(PLC_IOCTL_BASE, 5, sizeof(unsigned int))
+ #define PLC_IOCTL_GET_STARTUP   _IOR(PLC_IOCTL_BASE, 6, sizeof(unsigned int))
++#define RETRY 10
+ 
+-static int h_plc = -1;
++static int h_plc = -1, retr = 0;
+ 
+ static void __plc_sv_lock();
+ static void __plc_sv_unlock();
+@@ -45,17 +46,27 @@
+   printf("PLC_IOCTL_SET_STARTUP   = %x\n", PLC_IOCTL_SET_STARTUP);
+   printf("PLC_IOCTL_GET_STARTUP   = %x\n", PLC_IOCTL_GET_STARTUP);
+ #endif
+-  h_plc = open("/dev/plc", O_RDWR);
++/*  h_plc = open("/dev/plc", O_RDWR);
+   if (h_plc < 0) {
+     return -1;
+   }
++*/
++  arch_by_cmdline = kcmdline_get_arch();
++  if (ARCH_UNDEFINED == arch_by_cmdline )
++  {
++	  h_plc = open("/dev/plc", O_RDWR);
++	  if (h_plc < 0) {
++		  printf("can't open /dev/plc\n");
++		//__plc_sv_unlock();
++	    return -1;
++	  }
++  }
+ 
++while (RETRY != retr)
++{
+   __plc_sv_lock();
++  is_plc3 = (arch_by_cmdline == ARCH_PLC_300 || arch_by_cmdline == ARCH_PLC_308 || arch_by_cmdline == ARCH_PLC_304);
+   
+-  arch_by_cmdline = kcmdline_get_arch();
+-
+-  is_plc3 = (arch_by_cmdline == ARCH_PLC_300 || arch_by_cmdline == ARCH_PLC_308);
+-  
+   if (ioctl(h_plc, PLC_IOCTL_SV_CHECK) < 0) {
+     DTRACE(("no supervisor found - %s", strerror(errno)));
+     ioctl(h_plc, PLC_IOCTL_GET_STARTUP, &p_context->startup_time);
+@@ -78,12 +89,16 @@
+         }
+       }
+       DTRACE(("architecture not found"));
+-      return -1;
++      //return -1;
++      retr++;
++      continue;
+ Arch_found:
+       DTRACE(("architecture found"));
+       if (plc_pic_get_target_id(s_context, PIC_LOWER, p_context->startup_time, &p_context->target_id) != 0) {
+          DTRACE(("target not found"));
+-         return -1;
++         //return -1;
++         retr++;
++         continue;
+       }
+       DTRACE(("target read Ok"));
+ Save_arch:
+@@ -108,7 +123,10 @@
+   __plc_sv_unlock();
+   __pic_store_long(k, p_context->startup_time);
+   __pic_store_long(z, p_context->target_id);
+-
++  break;
++}
++  if ( RETRY == retr )
++	  return -1;
+   if (is_plc3) {
+     p_context->arch = p_context->target_id & 0xff;
+     p_context->is_unlimited = 1;
+@@ -164,6 +182,9 @@
+ 	  	return ARCH_PLC_300;
+ 	  } else if (strcasecmp(p2, "plc308") == 0) {
+ 	  	return ARCH_PLC_308;
++	  } else if (strcasecmp(p2, "plc304") == 0) {
++		  printf("arch plc304 selected\n");
++	  	return ARCH_PLC_304;
+ 	  }
+ 	  if (ne) {
+ 	    p1[1] = ' ';
+Index: plc1xx.h
+===================================================================
+--- a/plc1xx.h	(revision 343)
++++ b/plc1xx.h	(revision 1312)
+@@ -30,6 +30,7 @@
+   ARCH_UNDEFINED      = 11,
+   ARCH_PLC_300	      = 30,
+   ARCH_PLC_308        = 38,
++  ARCH_PLC_304		  = 34,
+ } MACHTYPE;
+ 
+ struct DAC_COETH {
+@@ -101,6 +102,7 @@
+ int plc_pic_get_clock(_ulong *since_epoch);
+ int plc_pic_set_clock(_ulong since_epoch);
+ int plc_is_supervisor(void);
++int plc_set_aux_power_time(unsigned int value);
+ 
+ // BEGIN_INTERNAL_CODE
+ 
+Index: ioman.c
+===================================================================
+--- a/ioman.c	(revision 343)
++++ b/ioman.c	(revision 1312)
+@@ -1,8 +1,10 @@
+ #include <unistd.h>
++#include <stdio.h>
+ #include <stdlib.h>
+ #include <errno.h>
+ #include <string.h>
+ #include <limits.h>
++#include <sys/file.h>
+ #include "plc1xx.h"
+ #include "ioman.h"
+ #include "libplc.h"
+@@ -447,4 +449,32 @@
+   RETURN(0, res);
+ }
+ 
++int plc_set_aux_power_time(unsigned int value)
++{
++
++	int descriptor,size;
++	char str[5];
++	FILE *fd;
++	DTRACE(( "value = %d\n", value));
++	fd = fopen("/proc/autonomous_time", "w");
++	if (NULL ==  fd)
++	{
++	  DTRACE(("can't open /proc/autonomous_time"));
++	  return -1;
++	}
++
++	if (value > 9999)
++	{
++		DTRACE(("max value of auxilary time is 9999 seconds\n"));
++		value = 9999;
++	}
++
++	size = sprintf(str,"%d", value);
++	size = fwrite(str,1,size, fd);
++	fflush(fd);
++	fclose(fd);
++
++  return 0;
++}
++
+ /***********************************************************/

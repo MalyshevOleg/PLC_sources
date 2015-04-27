@@ -1,0 +1,852 @@
+diff -urN gcc-3.4.2/libstdc++-v3/config/locale/gnu/c++locale_internal.h gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/c++locale_internal.h
+--- gcc-3.4.2/libstdc++-v3/config/locale/gnu/c++locale_internal.h	Thu Mar 18 09:36:33 2004
++++ gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/c++locale_internal.h	Thu Sep  9 17:07:09 2004
+@@ -31,7 +31,11 @@
+ 
+ #include <clocale>
+ 
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_MJN3_ONLY__
++#warning clean this up
++#endif
++
++#ifdef __UCLIBC_HAS_XLOCALE__
+                                                   
+ extern "C" __typeof(iswctype_l) __iswctype_l;
+ extern "C" __typeof(nl_langinfo_l) __nl_langinfo_l;
+diff -urN gcc-3.4.2/libstdc++-v3/config/locale/gnu/c_locale.cc gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/c_locale.cc
+--- gcc-3.4.2/libstdc++-v3/config/locale/gnu/c_locale.cc	Tue Jan 27 16:50:54 2004
++++ gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/c_locale.cc	Thu Sep  9 17:07:09 2004
+@@ -39,6 +39,20 @@
+ #include <langinfo.h>
+ #include <bits/c++locale_internal.h>
+ 
++#ifndef __UCLIBC_HAS_XLOCALE__
++#define __strtol_l(S, E, B, L)      strtol((S), (E), (B))
++#define __strtoul_l(S, E, B, L)     strtoul((S), (E), (B))
++#define __strtoll_l(S, E, B, L)     strtoll((S), (E), (B))
++#define __strtoull_l(S, E, B, L)    strtoull((S), (E), (B))
++#define __strtof_l(S, E, L)         strtof((S), (E))
++#define __strtod_l(S, E, L)         strtod((S), (E))
++#define __strtold_l(S, E, L)        strtold((S), (E))
++#warning should dummy __newlocale check for C|POSIX ?
++#define __newlocale(a, b, c)        NULL
++#define __freelocale(a)             ((void)0)
++#define __duplocale(a)              __c_locale()
++#endif
++
+ namespace std 
+ {
+   template<>
+@@ -97,12 +111,14 @@
+ 				    __c_locale __old)
+   {
+     __cloc = __newlocale(1 << LC_ALL, __s, __old);
++#ifdef __UCLIBC_HAS_XLOCALE__
+     if (!__cloc)
+       {
+ 	// This named locale is not supported by the underlying OS.
+ 	__throw_runtime_error(__N("locale::facet::_S_create_c_locale "
+ 			      "name not valid"));
+       }
++#endif
+   }
+   
+   void
+@@ -127,12 +143,14 @@
+       "LC_COLLATE", 
+       "LC_MONETARY",
+       "LC_MESSAGES", 
++#if _GLIBCXX_NUM_CATEGORIES != 0
+       "LC_PAPER", 
+       "LC_NAME", 
+       "LC_ADDRESS",
+       "LC_TELEPHONE", 
+       "LC_MEASUREMENT", 
+       "LC_IDENTIFICATION" 
++#endif
+     };
+ }
+ 
+diff -urN gcc-3.4.2/libstdc++-v3/config/locale/gnu/c_locale.h gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/c_locale.h
+--- gcc-3.4.2/libstdc++-v3/config/locale/gnu/c_locale.h	Mon Aug 16 09:03:24 2004
++++ gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/c_locale.h	Thu Sep  9 17:20:11 2004
+@@ -42,14 +42,28 @@
+ #include <cstdio>               // get std::snprintf or std::sprintf
+ #include <clocale>
+ #include <langinfo.h>		// For codecvt
++#ifdef __UCLIBC_MJN3_ONLY__
++#warning fix this
++#endif
++#ifdef __UCLIBC_HAS_LOCALE__
+ #include <iconv.h>		// For codecvt using iconv, iconv_t
++#endif
++#ifdef __UCLIBC_HAS_GETTEXT_AWARENESS__
+ #include <libintl.h> 		// For messages
++#endif
+ 
++#ifdef __UCLIBC_MJN3_ONLY__
++#warning what is _GLIBCXX_C_LOCALE_GNU for
++#endif
+ #define _GLIBCXX_C_LOCALE_GNU 1
+ 
+-#define _GLIBCXX_NUM_CATEGORIES 6
+-
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_MJN3_ONLY__
++#warning fix categories
++#endif
++// #define _GLIBCXX_NUM_CATEGORIES 6
++#define _GLIBCXX_NUM_CATEGORIES 0
++ 
++#ifdef __UCLIBC_HAS_XLOCALE__
+ namespace __gnu_cxx
+ {
+   extern "C" __typeof(uselocale) __uselocale;
+@@ -58,7 +72,11 @@
+ 
+ namespace std
+ {
++#ifdef __UCLIBC_HAS_XLOCALE__
+   typedef __locale_t		__c_locale;
++#else
++  typedef int*			__c_locale;
++#endif
+ 
+   // Convert numeric value of type _Tv to string and return length of
+   // string.  If snprintf is available use it, otherwise fall back to
+@@ -67,28 +85,27 @@
+   template<typename _Tv>
+     int
+     __convert_from_v(char* __out, const int __size, const char* __fmt,
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+ 		     _Tv __v, const __c_locale& __cloc, int __prec)
+     {
+       __c_locale __old = __gnu_cxx::__uselocale(__cloc);
+ #else
+ 		     _Tv __v, const __c_locale&, int __prec)
+     {
++# ifdef __UCLIBC_HAS_LOCALE__
+       char* __old = std::setlocale(LC_ALL, NULL);
+       char* __sav = new char[std::strlen(__old) + 1];
+       std::strcpy(__sav, __old);
+       std::setlocale(LC_ALL, "C");
++# endif
+ #endif
+ 
+-#ifdef _GLIBCXX_USE_C99
++
+       const int __ret = std::snprintf(__out, __size, __fmt, __prec, __v);
+-#else
+-      const int __ret = std::sprintf(__out, __fmt, __prec, __v);
+-#endif
+ 
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+       __gnu_cxx::__uselocale(__old);
+-#else
++#elif defined __UCLIBC_HAS_LOCALE__
+       std::setlocale(LC_ALL, __sav);
+       delete [] __sav;
+ #endif
+diff -urN gcc-3.4.2/libstdc++-v3/config/locale/gnu/codecvt_members.cc gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/codecvt_members.cc
+--- gcc-3.4.2/libstdc++-v3/config/locale/gnu/codecvt_members.cc	Sun Nov 30 11:10:50 2003
++++ gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/codecvt_members.cc	Thu Sep  9 17:07:09 2004
+@@ -50,7 +50,7 @@
+     result __ret = ok;
+     state_type __tmp_state(__state);
+ 
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __c_locale __old = __uselocale(_M_c_locale_codecvt);
+ #endif
+ 
+@@ -108,7 +108,7 @@
+ 	  }
+       }
+ 
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __uselocale(__old);
+ #endif
+ 
+@@ -125,7 +125,7 @@
+     result __ret = ok;
+     state_type __tmp_state(__state);
+ 
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __c_locale __old = __uselocale(_M_c_locale_codecvt);
+ #endif
+ 
+@@ -190,7 +190,7 @@
+ 	  }
+       }
+ 
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __uselocale(__old);
+ #endif
+ 
+@@ -204,12 +204,12 @@
+     // XXX This implementation assumes that the encoding is
+     // stateless and is either single-byte or variable-width.
+     int __ret = 0;
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __c_locale __old = __uselocale(_M_c_locale_codecvt);
+ #endif
+     if (MB_CUR_MAX == 1)
+       __ret = 1;
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __uselocale(__old);
+ #endif
+     return __ret;
+@@ -219,12 +219,12 @@
+   codecvt<wchar_t, char, mbstate_t>::
+   do_max_length() const throw()
+   {
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __c_locale __old = __uselocale(_M_c_locale_codecvt);
+ #endif
+     // XXX Probably wrong for stateful encodings.
+     int __ret = MB_CUR_MAX;
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __uselocale(__old);
+ #endif
+     return __ret;
+@@ -238,7 +238,7 @@
+     int __ret = 0;
+     state_type __tmp_state(__state);
+ 
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __c_locale __old = __uselocale(_M_c_locale_codecvt);
+ #endif
+ 
+@@ -296,7 +296,7 @@
+ 	  }
+       }
+ 
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __uselocale(__old);
+ #endif
+ 
+diff -urN gcc-3.4.2/libstdc++-v3/config/locale/gnu/collate_members.cc gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/collate_members.cc
+--- gcc-3.4.2/libstdc++-v3/config/locale/gnu/collate_members.cc	Fri Jul  4 21:05:30 2003
++++ gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/collate_members.cc	Thu Sep  9 17:07:09 2004
+@@ -36,6 +36,13 @@
+ #include <locale>
+ #include <bits/c++locale_internal.h>
+ 
++#ifndef __UCLIBC_HAS_XLOCALE__
++#define __strcoll_l(S1, S2, L)      strcoll((S1), (S2))
++#define __strxfrm_l(S1, S2, N, L)   strxfrm((S1), (S2), (N))
++#define __wcscoll_l(S1, S2, L)      wcscoll((S1), (S2))
++#define __wcsxfrm_l(S1, S2, N, L)   wcsxfrm((S1), (S2), (N))
++#endif
++
+ namespace std
+ {
+   // These are basically extensions to char_traits, and perhaps should
+diff -urN gcc-3.4.2/libstdc++-v3/config/locale/gnu/ctype_members.cc gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/ctype_members.cc
+--- gcc-3.4.2/libstdc++-v3/config/locale/gnu/ctype_members.cc	Sat May 15 14:17:58 2004
++++ gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/ctype_members.cc	Thu Sep  9 17:07:09 2004
+@@ -33,9 +33,18 @@
+ 
+ // Written by Benjamin Kosnik <bkoz@redhat.com>
+ 
++#define _LIBC
+ #include <locale>
++#undef _LIBC
+ #include <bits/c++locale_internal.h>
+ 
++#ifndef __UCLIBC_HAS_XLOCALE__
++#define __wctype_l(S, L)           wctype((S))
++#define __towupper_l(C, L)         towupper((C))
++#define __towlower_l(C, L)         towlower((C))
++#define __iswctype_l(C, M, L)      iswctype((C), (M))
++#endif
++
+ namespace std
+ {
+   // NB: The other ctype<char> specializations are in src/locale.cc and
+@@ -48,9 +57,11 @@
+ 	{
+ 	  this->_S_destroy_c_locale(this->_M_c_locale_ctype);
+ 	  this->_S_create_c_locale(this->_M_c_locale_ctype, __s); 
++#ifdef __UCLIBC_HAS_XLOCALE__
+ 	  this->_M_toupper = this->_M_c_locale_ctype->__ctype_toupper;
+ 	  this->_M_tolower = this->_M_c_locale_ctype->__ctype_tolower;
+ 	  this->_M_table = this->_M_c_locale_ctype->__ctype_b;
++#endif
+ 	}
+     }
+ 
+@@ -208,11 +219,11 @@
+   {
+     if (__wc >= 0 && __wc < 128 && _M_narrow_ok)
+       return _M_narrow[__wc];
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __c_locale __old = __uselocale(_M_c_locale_ctype);
+ #endif
+     const int __c = wctob(__wc);
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __uselocale(__old);
+ #endif
+     return (__c == EOF ? __dfault : static_cast<char>(__c)); 
+@@ -223,7 +234,7 @@
+   do_narrow(const wchar_t* __lo, const wchar_t* __hi, char __dfault, 
+ 	    char* __dest) const
+   {
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __c_locale __old = __uselocale(_M_c_locale_ctype);
+ #endif
+     if (_M_narrow_ok)
+@@ -247,7 +258,7 @@
+ 	  ++__lo;
+ 	  ++__dest;
+ 	}
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __uselocale(__old);
+ #endif
+     return __hi;
+@@ -256,7 +267,7 @@
+   void
+   ctype<wchar_t>::_M_initialize_ctype()
+   {
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __c_locale __old = __uselocale(_M_c_locale_ctype);
+ #endif
+     wint_t __i;
+@@ -281,7 +292,7 @@
+ 	_M_bit[__k] = static_cast<mask>(_ISbit(__k));
+ 	_M_wmask[__k] = _M_convert_to_wmask(_M_bit[__k]);
+       }
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+     __uselocale(__old);
+ #endif
+   }
+diff -urN gcc-3.4.2/libstdc++-v3/config/locale/gnu/messages_members.cc gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/messages_members.cc
+--- gcc-3.4.2/libstdc++-v3/config/locale/gnu/messages_members.cc	Fri Jul  4 21:05:30 2003
++++ gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/messages_members.cc	Thu Sep  9 17:07:09 2004
+@@ -36,6 +36,19 @@
+ #include <locale>
+ #include <bits/c++locale_internal.h>
+ 
++#ifdef __UCLIBC_MJN3_ONLY__
++#warning fix gettext stuff
++#endif
++#ifdef __UCLIBC_HAS_GETTEXT_AWARENESS__
++extern "C" char *__dcgettext(const char *domainname,
++			     const char *msgid, int category);
++#undef gettext
++#define gettext(msgid) __dcgettext(NULL, msgid, LC_MESSAGES)
++#else
++#undef gettext
++#define gettext(msgid) (msgid)
++#endif
++
+ namespace std
+ {
+   // Specializations.
+@@ -43,18 +56,21 @@
+     string
+     messages<char>::do_get(catalog, int, int, const string& __dfault) const
+     {
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+       __c_locale __old = __uselocale(_M_c_locale_messages);
+       const char* __msg = const_cast<const char*>(gettext(__dfault.c_str()));
+       __uselocale(__old);
+       return string(__msg);
+-#else
++#elif defined __UCLIBC_HAS_LOCALE__
+       char* __old = strdup(setlocale(LC_ALL, NULL));
+       setlocale(LC_ALL, _M_name_messages);
+       const char* __msg = gettext(__dfault.c_str());
+       setlocale(LC_ALL, __old);
+       free(__old);
+       return string(__msg);
++#else
++      const char* __msg = gettext(__dfault.c_str());
++      return string(__msg);
+ #endif
+     }
+ 
+@@ -63,17 +79,20 @@
+     wstring
+     messages<wchar_t>::do_get(catalog, int, int, const wstring& __dfault) const
+     {
+-# if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++# ifdef __UCLIBC_HAS_XLOCALE__
+       __c_locale __old = __uselocale(_M_c_locale_messages);
+       char* __msg = gettext(_M_convert_to_char(__dfault));
+       __uselocale(__old);
+       return _M_convert_from_char(__msg);
+-# else
++# elif defined __UCLIBC_HAS_LOCALE__
+       char* __old = strdup(setlocale(LC_ALL, NULL));
+       setlocale(LC_ALL, _M_name_messages);
+       char* __msg = gettext(_M_convert_to_char(__dfault));
+       setlocale(LC_ALL, __old);
+       free(__old);
++      return _M_convert_from_char(__msg);
++# else
++      char* __msg = gettext(_M_convert_to_char(__dfault));
+       return _M_convert_from_char(__msg);
+ # endif
+     }
+diff -urN gcc-3.4.2/libstdc++-v3/config/locale/gnu/messages_members.h gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/messages_members.h
+--- gcc-3.4.2/libstdc++-v3/config/locale/gnu/messages_members.h	Mon May 24 13:49:47 2004
++++ gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/messages_members.h	Thu Sep  9 17:07:09 2004
+@@ -33,6 +33,20 @@
+ 
+ // Written by Benjamin Kosnik <bkoz@redhat.com>
+ 
++#ifdef __UCLIBC_MJN3_ONLY__
++#warning fix prototypes for *textdomain funcs
++#endif
++#ifdef __UCLIBC_HAS_GETTEXT_AWARENESS__
++extern "C" char *__textdomain(const char *domainname);
++extern "C" char *__bindtextdomain(const char *domainname,
++				  const char *dirname);
++#else
++#undef __textdomain
++#undef __bindtextdomain
++#define __textdomain(D)           ((void)0)
++#define __bindtextdomain(D,P)     ((void)0)
++#endif
++
+   // Non-virtual member functions.
+   template<typename _CharT>
+      messages<_CharT>::messages(size_t __refs)
+@@ -56,7 +70,7 @@
+     messages<_CharT>::open(const basic_string<char>& __s, const locale& __loc, 
+ 			   const char* __dir) const
+     { 
+-      bindtextdomain(__s.c_str(), __dir);
++      __bindtextdomain(__s.c_str(), __dir);
+       return this->do_open(__s, __loc); 
+     }
+ 
+@@ -76,7 +90,7 @@
+     { 
+       // No error checking is done, assume the catalog exists and can
+       // be used.
+-      textdomain(__s.c_str());
++      __textdomain(__s.c_str());
+       return 0;
+     }
+ 
+diff -urN gcc-3.4.2/libstdc++-v3/config/locale/gnu/monetary_members.cc gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/monetary_members.cc
+--- gcc-3.4.2/libstdc++-v3/config/locale/gnu/monetary_members.cc	Fri Apr 23 08:10:23 2004
++++ gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/monetary_members.cc	Thu Sep  9 17:07:09 2004
+@@ -33,9 +33,20 @@
+ 
+ // Written by Benjamin Kosnik <bkoz@redhat.com>
+ 
++#define _LIBC
+ #include <locale>
++#undef _LIBC
+ #include <bits/c++locale_internal.h>
+ 
++#ifdef __UCLIBC_MJN3_ONLY__
++#warning optimize this for uclibc
++#warning tailor for stub locale support
++#endif
++
++#ifndef __UCLIBC_HAS_XLOCALE__
++#define __nl_langinfo_l(N, L)         nl_langinfo((N))
++#endif
++
+ namespace std
+ {
+   // Construct and return valid pattern consisting of some combination of:
+@@ -345,7 +356,7 @@
+   template<> 
+     void
+     moneypunct<wchar_t, true>::_M_initialize_moneypunct(__c_locale __cloc, 
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+ 							const char*)
+ #else
+ 							const char* __name)
+@@ -382,7 +393,7 @@
+       else
+ 	{
+ 	  // Named locale.
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+ 	  __c_locale __old = __uselocale(__cloc);
+ #else
+ 	  // Switch to named locale so that mbsrtowcs will work.
+@@ -390,6 +401,18 @@
+ 	  setlocale(LC_ALL, __name);
+ #endif
+ 
++#ifdef __UCLIBC_MJN3_ONLY__
++#warning fix this... should be monetary
++#endif
++#ifdef __UCLIBC__
++# ifdef __UCLIBC_HAS_XLOCALE__
++	  _M_data->_M_decimal_point = __cloc->decimal_point_wc;
++	  _M_data->_M_thousands_sep = __cloc->thousands_sep_wc;
++# else
++	  _M_data->_M_decimal_point = __global_locale->decimal_point_wc;
++	  _M_data->_M_thousands_sep = __global_locale->thousands_sep_wc;
++# endif
++#else
+ 	  union __s_and_w { const char *__s; unsigned int __w; } __u;
+ 	  __u.__s = __nl_langinfo_l(_NL_MONETARY_DECIMAL_POINT_WC, __cloc);
+ 	  _M_data->_M_decimal_point = static_cast<wchar_t>(__u.__w);
+@@ -397,6 +420,7 @@
+ 	  __u.__s = __nl_langinfo_l(_NL_MONETARY_THOUSANDS_SEP_WC, __cloc);
+ 	  _M_data->_M_thousands_sep = static_cast<wchar_t>(__u.__w);
+ 	  _M_data->_M_grouping = __nl_langinfo_l(__MON_GROUPING, __cloc);
++#endif
+ 	  _M_data->_M_grouping_size = strlen(_M_data->_M_grouping);
+ 
+ 	  const char* __cpossign = __nl_langinfo_l(__POSITIVE_SIGN, __cloc);
+@@ -457,7 +481,7 @@
+ 	      _M_data = 0;
+ 	      delete __wcs_ps;
+ 	      delete __wcs_ns;	      
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+ 	      __uselocale(__old);
+ #else
+ 	      setlocale(LC_ALL, __old);
+@@ -478,7 +502,7 @@
+ 	  _M_data->_M_neg_format = _S_construct_pattern(__nprecedes, __nspace, 
+ 							__nposn);
+ 
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+ 	  __uselocale(__old);
+ #else
+ 	  setlocale(LC_ALL, __old);
+@@ -490,7 +514,7 @@
+   template<> 
+   void
+   moneypunct<wchar_t, false>::_M_initialize_moneypunct(__c_locale __cloc,
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+ 						       const char*)
+ #else
+                                                        const char* __name)
+@@ -527,7 +551,7 @@
+       else
+ 	{
+ 	  // Named locale.
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+ 	  __c_locale __old = __uselocale(__cloc);
+ #else
+ 	  // Switch to named locale so that mbsrtowcs will work.
+@@ -535,12 +559,25 @@
+ 	  setlocale(LC_ALL, __name);
+ #endif
+ 
++#ifdef __UCLIBC_MJN3_ONLY__
++#warning fix this... should be monetary
++#endif
++#ifdef __UCLIBC__
++# ifdef __UCLIBC_HAS_XLOCALE__
++	  _M_data->_M_decimal_point = __cloc->decimal_point_wc;
++	  _M_data->_M_thousands_sep = __cloc->thousands_sep_wc;
++# else
++	  _M_data->_M_decimal_point = __global_locale->decimal_point_wc;
++	  _M_data->_M_thousands_sep = __global_locale->thousands_sep_wc;
++# endif
++#else
+ 	  union __s_and_w { const char *__s; unsigned int __w; } __u;
+ 	  __u.__s = __nl_langinfo_l(_NL_MONETARY_DECIMAL_POINT_WC, __cloc);
+ 	  _M_data->_M_decimal_point = static_cast<wchar_t>(__u.__w);
+ 
+ 	  __u.__s = __nl_langinfo_l(_NL_MONETARY_THOUSANDS_SEP_WC, __cloc);
+ 	  _M_data->_M_thousands_sep = static_cast<wchar_t>(__u.__w);
++#endif
+ 	  _M_data->_M_grouping = __nl_langinfo_l(__MON_GROUPING, __cloc);
+           _M_data->_M_grouping_size = strlen(_M_data->_M_grouping);
+ 
+@@ -603,7 +640,7 @@
+               _M_data = 0;
+ 	      delete __wcs_ps;
+ 	      delete __wcs_ns;	      
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+ 	      __uselocale(__old);
+ #else
+ 	      setlocale(LC_ALL, __old);
+@@ -623,7 +660,7 @@
+ 	  _M_data->_M_neg_format = _S_construct_pattern(__nprecedes, __nspace, 
+ 	                                                __nposn);
+ 
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+ 	  __uselocale(__old);
+ #else
+ 	  setlocale(LC_ALL, __old);
+diff -urN gcc-3.4.2/libstdc++-v3/config/locale/gnu/numeric_members.cc gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/numeric_members.cc
+--- gcc-3.4.2/libstdc++-v3/config/locale/gnu/numeric_members.cc	Sat May 15 14:17:58 2004
++++ gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/numeric_members.cc	Thu Sep  9 17:07:09 2004
+@@ -33,9 +33,18 @@
+ 
+ // Written by Benjamin Kosnik <bkoz@redhat.com>
+ 
++#define _LIBC
+ #include <locale>
++#undef _LIBC
+ #include <bits/c++locale_internal.h>
+ 
++#ifdef __UCLIBC_MJN3_ONLY__
++#warning tailor for stub locale support
++#endif
++#ifndef __UCLIBC_HAS_XLOCALE__
++#define __nl_langinfo_l(N, L)         nl_langinfo((N))
++#endif
++
+ namespace std
+ {
+   template<> 
+@@ -131,12 +140,25 @@
+       else
+ 	{
+ 	  // Named locale.
++#ifdef __UCLIBC_MJN3_ONLY__
++#warning fix this
++#endif
++#ifdef __UCLIBC__
++# ifdef __UCLIBC_HAS_XLOCALE__
++	  _M_data->_M_decimal_point = __cloc->decimal_point_wc;
++	  _M_data->_M_thousands_sep = __cloc->thousands_sep_wc;
++# else
++	  _M_data->_M_decimal_point = __global_locale->decimal_point_wc;
++	  _M_data->_M_thousands_sep = __global_locale->thousands_sep_wc;
++# endif
++#else
+ 	  union __s_and_w { const char *__s; unsigned int __w; } __u;
+ 	  __u.__s = __nl_langinfo_l(_NL_NUMERIC_DECIMAL_POINT_WC, __cloc);
+ 	  _M_data->_M_decimal_point = static_cast<wchar_t>(__u.__w);
+ 
+ 	  __u.__s = __nl_langinfo_l(_NL_NUMERIC_THOUSANDS_SEP_WC, __cloc);
+ 	  _M_data->_M_thousands_sep = static_cast<wchar_t>(__u.__w);
++#endif
+ 
+ 	  if (_M_data->_M_thousands_sep == L'\0')
+ 	    _M_data->_M_grouping = "";
+diff -urN gcc-3.4.2/libstdc++-v3/config/locale/gnu/time_members.cc gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/time_members.cc
+--- gcc-3.4.2/libstdc++-v3/config/locale/gnu/time_members.cc	Sat Aug 28 12:23:34 2004
++++ gcc-3.4.2-work/libstdc++-v3/config/locale/gnu/time_members.cc	Thu Sep  9 17:22:13 2004
+@@ -37,6 +37,13 @@
+ #include <locale>
+ #include <bits/c++locale_internal.h>
+ 
++#ifdef __UCLIBC_MJN3_ONLY__
++#warning tailor for stub locale support
++#endif
++#ifndef __UCLIBC_HAS_XLOCALE__
++#define __nl_langinfo_l(N, L)         nl_langinfo((N))
++#endif
++
+ namespace std
+ {
+   template<>
+@@ -45,7 +52,7 @@
+     _M_put(char* __s, size_t __maxlen, const char* __format, 
+ 	   const tm* __tm) const
+     {
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+       const size_t __len = __strftime_l(__s, __maxlen, __format, __tm,
+ 					_M_c_locale_timepunct);
+ #else
+@@ -197,7 +204,7 @@
+     _M_put(wchar_t* __s, size_t __maxlen, const wchar_t* __format, 
+ 	   const tm* __tm) const
+     {
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
++#ifdef __UCLIBC_HAS_XLOCALE__
+       const size_t __len = __wcsftime_l(__s, __maxlen, __format, __tm,
+ 					_M_c_locale_timepunct);
+ #else
+@@ -219,7 +226,8 @@
+       if (!_M_data)
+ 	_M_data = new __timepunct_cache<wchar_t>;
+ 
+-      if (!__cloc)
++#warning wide time stuff
++//       if (!__cloc)
+ 	{
+ 	  // "C" locale
+ 	  _M_c_locale_timepunct = _S_get_c_locale();
+@@ -280,6 +288,7 @@
+ 	  _M_data->_M_amonth11 = L"Nov";
+ 	  _M_data->_M_amonth12 = L"Dec";
+ 	}
++#if 0
+       else
+ 	{
+ 	  _M_c_locale_timepunct = _S_clone_c_locale(__cloc); 
+@@ -340,6 +349,7 @@
+ 	  _M_data->_M_amonth11 = reinterpret_cast<wchar_t*>(__nl_langinfo_l(_NL_WABMON_11, __cloc));
+ 	  _M_data->_M_amonth12 = reinterpret_cast<wchar_t*>(__nl_langinfo_l(_NL_WABMON_12, __cloc));
+ 	}
++#endif // 0
+     }
+ #endif
+ }
+diff -urN gcc-3.4.2/libstdc++-v3/config/os/gnu-linux/ctype_base.h gcc-3.4.2-work/libstdc++-v3/config/os/gnu-linux/ctype_base.h
+--- gcc-3.4.2/libstdc++-v3/config/os/gnu-linux/ctype_base.h	Thu Oct  9 12:10:55 2003
++++ gcc-3.4.2-work/libstdc++-v3/config/os/gnu-linux/ctype_base.h	Thu Sep  9 17:07:09 2004
+@@ -36,12 +36,14 @@
+   
+   struct ctype_base
+   {
++    // Note: In uClibc, the following two types depend on configuration.
++ 
+     // Non-standard typedefs.
+-    typedef const int* 		__to_type;
++    typedef const __ctype_touplow_t* __to_type;
+ 
+     // NB: Offsets into ctype<char>::_M_table force a particular size
+     // on the mask type. Because of this, we don't use an enum.
+-    typedef unsigned short 	mask;   
++    typedef __ctype_mask_t	mask;   
+     static const mask upper    	= _ISupper;
+     static const mask lower 	= _ISlower;
+     static const mask alpha 	= _ISalpha;
+diff -urN gcc-3.4.2/libstdc++-v3/config/os/gnu-linux/ctype_noninline.h gcc-3.4.2-work/libstdc++-v3/config/os/gnu-linux/ctype_noninline.h
+--- gcc-3.4.2/libstdc++-v3/config/os/gnu-linux/ctype_noninline.h	Mon May 24 13:49:47 2004
++++ gcc-3.4.2-work/libstdc++-v3/config/os/gnu-linux/ctype_noninline.h	Thu Sep  9 17:07:09 2004
+@@ -34,99 +34,32 @@
+   
+ // Information as gleaned from /usr/include/ctype.h
+ 
+-#if _GLIBCXX_C_LOCALE_GNU
+   const ctype_base::mask*
+   ctype<char>::classic_table() throw()
+-  { return _S_get_c_locale()->__ctype_b; }
+-#else
+-  const ctype_base::mask*
+-  ctype<char>::classic_table() throw()
+-  {
+-    const ctype_base::mask* __ret;
+-    char* __old = strdup(setlocale(LC_CTYPE, NULL));
+-    setlocale(LC_CTYPE, "C");
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
+-    __ret = *__ctype_b_loc();
+-#else
+-    __ret = __ctype_b;
+-#endif
+-    setlocale(LC_CTYPE, __old);
+-    free(__old);
+-    return __ret;
+-  }
+-#endif
++  { return __C_ctype_b; }
+ 
+-#if _GLIBCXX_C_LOCALE_GNU
+-  ctype<char>::ctype(__c_locale __cloc, const mask* __table, bool __del, 
+-		     size_t __refs) 
+-  : facet(__refs), _M_c_locale_ctype(_S_clone_c_locale(__cloc)), 
+-  _M_del(__table != 0 && __del), 
+-  _M_toupper(_M_c_locale_ctype->__ctype_toupper),  
+-  _M_tolower(_M_c_locale_ctype->__ctype_tolower), 
+-  _M_table(__table ? __table : _M_c_locale_ctype->__ctype_b), 
+-  _M_widen_ok(0), _M_narrow_ok(0) 
+-  {
+-    memset(_M_widen, 0, sizeof(_M_widen));
+-    memset(_M_narrow, 0, sizeof(_M_narrow));
+-  }
+-#else
+   ctype<char>::ctype(__c_locale, const mask* __table, bool __del, 
+ 		     size_t __refs) 
+   : facet(__refs), _M_c_locale_ctype(_S_get_c_locale()), 
+   _M_del(__table != 0 && __del), _M_widen_ok(0), _M_narrow_ok(0)
+   {
+-    char* __old=strdup(setlocale(LC_CTYPE, NULL));
+-    setlocale(LC_CTYPE, "C");
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
+-    _M_toupper = *__ctype_toupper_loc();
+-    _M_tolower = *__ctype_tolower_loc();
+-    _M_table = __table ? __table : *__ctype_b_loc();
+-#else
+-    _M_toupper = __ctype_toupper;
+-    _M_tolower = __ctype_tolower;
+-    _M_table = __table ? __table : __ctype_b;
+-#endif
+-    setlocale(LC_CTYPE, __old);
+-    free(__old);
++    _M_toupper = __C_ctype_toupper;
++    _M_tolower = __C_ctype_tolower;
++    _M_table = __table ? __table : __C_ctype_b;
+     memset(_M_widen, 0, sizeof(_M_widen));
+     memset(_M_narrow, 0, sizeof(_M_narrow));
+   }
+-#endif
+ 
+-#if _GLIBCXX_C_LOCALE_GNU
+-  ctype<char>::ctype(const mask* __table, bool __del, size_t __refs) 
+-  : facet(__refs), _M_c_locale_ctype(_S_get_c_locale()), 
+-  _M_del(__table != 0 && __del),
+-  _M_toupper(_M_c_locale_ctype->__ctype_toupper),  
+-  _M_tolower(_M_c_locale_ctype->__ctype_tolower), 
+-  _M_table(__table ? __table : _M_c_locale_ctype->__ctype_b), 
+-  _M_widen_ok(0), _M_narrow_ok(0) 
+-  {
+-    memset(_M_widen, 0, sizeof(_M_widen));
+-    memset(_M_narrow, 0, sizeof(_M_narrow));
+-  }
+-#else
+   ctype<char>::ctype(const mask* __table, bool __del, size_t __refs)
+   : facet(__refs), _M_c_locale_ctype(_S_get_c_locale()), 
+   _M_del(__table != 0 && __del), _M_widen_ok(0), _M_narrow_ok(0)
+   {
+-    char* __old=strdup(setlocale(LC_CTYPE, NULL));
+-    setlocale(LC_CTYPE, "C");
+-#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2)
+-    _M_toupper = *__ctype_toupper_loc();
+-    _M_tolower = *__ctype_tolower_loc();
+-    _M_table = __table ? __table : *__ctype_b_loc();
+-#else
+-    _M_toupper = __ctype_toupper;
+-    _M_tolower = __ctype_tolower;
+-    _M_table = __table ? __table : __ctype_b;
+-#endif
+-    setlocale(LC_CTYPE, __old);
+-    free(__old);
++    _M_toupper = __C_ctype_toupper;
++    _M_tolower = __C_ctype_tolower;
++    _M_table = __table ? __table : __C_ctype_b;
+     memset(_M_widen, 0, sizeof(_M_widen));
+     memset(_M_narrow, 0, sizeof(_M_narrow));
+   }
+-#endif
+ 
+   char
+   ctype<char>::do_toupper(char __c) const
+diff -urN gcc-3.4.2/libstdc++-v3/config/os/gnu-linux/os_defines.h gcc-3.4.2-work/libstdc++-v3/config/os/gnu-linux/os_defines.h
+--- gcc-3.4.2/libstdc++-v3/config/os/gnu-linux/os_defines.h	Fri Jul  4 21:05:31 2003
++++ gcc-3.4.2-work/libstdc++-v3/config/os/gnu-linux/os_defines.h	Thu Sep  9 17:07:09 2004
+@@ -39,8 +39,6 @@
+ #include <features.h>
+ 
+ // We must not see the optimized string functions GNU libc defines.
+-#if defined __GLIBC__ && __GLIBC__ >= 2
+ #define __NO_STRING_INLINES
+-#endif
+ 
+ #endif

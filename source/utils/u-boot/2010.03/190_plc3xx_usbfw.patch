@@ -1,0 +1,557 @@
+Index: include/plc3xx.h
+===================================================================
+--- u-boot.old/include/plc3xx.h	(.../tags/plc30x-base)	(revision 0)
++++ u-boot.new/include/plc3xx.h	(.../branches/plc30x)	(revision 2406)
+@@ -0,0 +1,28 @@
++#ifndef __PLC3XX_H
++#define __PLC3XX_H
++
++#include <asm/arch/hardware.h>
++
++enum leds {
++	led_work = 0,
++	led_link,
++	led_error,
++};
++
++void plc3xx_gpio_pin_out(AT91PS_PIO port, int pin);
++void plc3xx_gpio_pin_in(AT91PS_PIO port, int pin);
++
++AT91PS_PIO plc3xx_gpio_port(int gpio);
++int plc3xx_gpio_pin(int gpio);
++
++void plc3xx_led_on(int n);
++void plc3xx_led_off(int n);
++void plc3xx_led_touch(int n);
++
++int plc3xx_flash_update(void);
++int plc3xx_stuck_after_fwupd(void);
++int plc3xx_init(void);
++
++int plc3xx_is_sw_fwupd(void);
++
++#endif
+Index: board/owen/plc323/owen-plc323.c
+===================================================================
+--- u-boot.old/board/owen/plc323/owen-plc323.c	(.../tags/plc30x-base)	(revision 2406)
++++ u-boot.new/board/owen/plc323/owen-plc323.c	(.../branches/plc30x)	(revision 2406)
+@@ -29,6 +29,7 @@
+ #include <common.h>
+ #include <asm/io.h>
+ #include <netdev.h>
++#include <nls_owen.h>
+ #if defined(CONFIG_DRIVER_ETHER)
+ #include <at91rm9200_net.h>
+ #endif
+@@ -51,7 +52,9 @@
+ 
+ 	/* Do interrupt init here, because flash needs timers */
+ 	timer_init();
++	/* temp disable early flash init
+ 	flash_init();
++	*/
+ 
+ 	return 0;
+ }
+@@ -71,7 +74,10 @@
+ #endif
+ 
+ 	/* Protect U-Boot, kernel & ramdisk memory addresses */
+-	run_command("protect on 10000000 1041ffff", 0);
++	run_command("protect on 10000000 1005ffff", 0);
++
++	set_loc(LOC_ENGLISH);
++
+ 	return 0;
+ }
+ 
+Index: board/owen/plc323/config.mk
+===================================================================
+--- u-boot.old/board/owen/plc323/config.mk	(.../tags/plc30x-base)	(revision 2406)
++++ u-boot.new/board/owen/plc323/config.mk	(.../branches/plc30x)	(revision 2406)
+@@ -1 +1,2 @@
+ TEXT_BASE = 0x21f00000
++#TEXT_BASE = 0x21c00000 
+Index: drivers/usb/host/ohci.h
+===================================================================
+--- u-boot.old/drivers/usb/host/ohci.h	(.../tags/plc30x-base)	(revision 2406)
++++ u-boot.new/drivers/usb/host/ohci.h	(.../branches/plc30x)	(revision 2406)
+@@ -49,18 +49,12 @@
+ static const char *cc_to_string[16] = {
+ 	"No Error",
+ 	"CRC: Last data packet from endpoint contained a CRC error.",
+-	"BITSTUFFING: Last data packet from endpoint contained a bit " \
+-		     "stuffing violation",
+-	"DATATOGGLEMISMATCH: Last packet from endpoint had data toggle PID\n" \
+-		     "that did not match the expected value.",
+-	"STALL: TD was moved to the Done Queue because the endpoint returned" \
+-		     " a STALL PID",
+-	"DEVICENOTRESPONDING: Device did not respond to token (IN) or did\n" \
+-		     "not provide a handshake (OUT)",
+-	"PIDCHECKFAILURE: Check bits on PID from endpoint failed on data PID\n"\
+-		     "(IN) or handshake (OUT)",
+-	"UNEXPECTEDPID: Receive PID was not valid when encountered or PID\n" \
+-		     "value is not defined.",
++	"BITSTUFFING: Last data packet from endpoint contained a bit stuffing violation",
++	"DATATOGGLEMISMATCH: Last packet from endpoint had data toggle PID, that did not match the expected value.",
++	"STALL: TD was moved to the Done Queue because the endpoint returnedi a STALL PID",
++	"DEVICENOTRESPONDING: Device did not respond to token (IN) or did not provide a handshake (OUT)",
++	"PIDCHECKFAILURE: Check bits on PID from endpoint failed on data PID (IN) or handshake (OUT)",
++	"UNEXPECTEDPID: Receive PID was not valid when encountered or PID value is not defined.",
+ 	"DATAOVERRUN: The amount of data returned by the endpoint exceeded\n" \
+ 		     "either the size of the maximum data packet allowed\n" \
+ 		     "from the endpoint (found in MaximumPacketSize field\n" \
+@@ -70,11 +64,8 @@
+ 		     "specified buffer",
+ 	"reserved1",
+ 	"reserved2",
+-	"BUFFEROVERRUN: During an IN, HC received data from endpoint faster\n" \
+-		     "than it could be written to system memory",
+-	"BUFFERUNDERRUN: During an OUT, HC could not retrieve data from\n" \
+-		     "system memory fast enough to keep up with data USB " \
+-		     "data rate.",
++	"BUFFEROVERRUN: During an IN, HC received data from endpoint faster than it could be written to system memory",
++	"BUFFERUNDERRUN: During an OUT, HC could not retrieve data from system memory fast enough to keep up with data USB data rate.",
+ 	"NOT ACCESSED: This code is set by software before the TD is placed" \
+ 		     "on a list to be processed by the HC.(1)",
+ 	"NOT ACCESSED: This code is set by software before the TD is placed" \
+Index: common/plc3xx.c
+===================================================================
+--- u-boot.old/common/plc3xx.c	(.../tags/plc30x-base)	(revision 0)
++++ u-boot.new/common/plc3xx.c	(.../branches/plc30x)	(revision 2406)
+@@ -0,0 +1,415 @@
++#include <common.h>
++#include <linux/list.h>
++#include <linux/ctype.h>
++#include <malloc.h>
++#include <nls_owen.h>
++#include <usb.h>
++#include <div64.h>
++#include <asm/arch/at91_pio.h>
++#include <asm/arch/hardware.h>
++#include <asm/io.h>
++#include <plc3xx.h>
++#include <asm/errno.h>
++
++/* */
++
++/*****************************************************************************/
++
++#if defined(CONFIG_OWEN_PLC323)
++#define FWUPD_CHECK_PIN	96
++#elif defined(CONFIG_OWEN_PLC304)
++#define FWUPD_CHECK_PIN	96
++#else
++#error "unsupported board"
++#endif
++
++/*****************************************************************************/
++
++static int pb_tl = 0;
++static int fwupd_init_state = 0;
++
++struct gpio_led {
++	int gpio;
++	int pin;
++	AT91PS_PIO port;
++	ulong timer;
++	int stat;
++};
++
++#if defined(CONFIG_OWEN_PLC323)
++static struct gpio_led leds[] = {
++	[led_work] = { .gpio = 91 },
++	[led_link] = { .gpio = 86 },
++	[led_error] = { .gpio = 152 },
++};
++#elif defined(CONFIG_OWEN_PLC304)
++static struct gpio_led leds[] = {
++	[0] = { .gpio = 66 /* PB2 */ },
++};
++#endif
++
++
++/*****************************************************************************/
++
++int plc3xx_is_sw_fwupd(void)
++{
++	AT91PS_PIO port;
++	int pin;
++	int curr_state;
++
++	port = plc3xx_gpio_port(FWUPD_CHECK_PIN);
++	if (port != 0) {
++		pin = plc3xx_gpio_pin(FWUPD_CHECK_PIN);
++		curr_state = (port->PIO_PDSR & (1 << pin)) != 0;
++		if (curr_state != fwupd_init_state) {
++			return curr_state;
++		}
++	}
++
++	return 0;
++}
++
++/*****************************************************************************/
++
++void plc3xx_gpio_pin_out(AT91PS_PIO port, int pin)
++{
++	/* int disable */
++	writel(1 << pin, &port->PIO_IDR);
++	/* pullup disable */
++	writel(1 << pin, &port->PIO_PPUDR);
++	/* enable output */
++	writel(1 << pin, &port->PIO_OER);
++	/* enable pin */
++	writel(1 << pin, &port->PIO_PER);
++	/* clear value */
++	writel(1 << pin, &port->PIO_CODR);
++}
++
++void plc3xx_gpio_pin_in(AT91PS_PIO port, int pin)
++{
++	/* int disable */
++	writel(1 << pin, &port->PIO_IDR);
++	/* disable pullup (to enable - write to PPUER) */
++	writel(1 << pin, &port->PIO_PPUDR);
++	/* disable output */
++	writel(1 << pin, &port->PIO_ODR);
++	/* enable pin */
++	writel(1 << pin, &port->PIO_PER);
++	
++}
++
++AT91PS_PIO plc3xx_gpio_port(int gpio)
++{
++	switch (gpio / 32) {
++		case 1: return AT91C_BASE_PIOA;
++		case 2: return AT91C_BASE_PIOB;
++		case 3: return AT91C_BASE_PIOC;
++		case 4: return AT91C_BASE_PIOD;
++		default: return  0;
++	}
++}
++
++int plc3xx_gpio_pin(int gpio)
++{
++	return gpio & 0x1f;
++}
++
++/*****************************************************************************/
++
++#if 0
++
++int gpio_request(unsigned gpio, const char *label)
++{
++	if (plc3xx_gpio_port(gpio) == 0) {
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
++int gpio_free(unsigned gpio)
++{
++	if (plc3xx_gpio_port(gpio) == 0) {
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
++int gpio_direction_input(unsigned gpio)
++{
++	AT91PS_PIO port;
++	int pin;
++
++	port = plc3xx_gpio_port(gpio);
++	if (port == 0) {
++		return -EINVAL;
++	}
++	pin = plc3xx_gpio_pin(gpio);
++
++	plc3xx_gpio_pin_in(port, pin);
++
++	return 0;
++}
++
++int gpio_direction_output(unsigned gpio, int value)
++{
++	AT91PS_PIO port;
++	int pin;
++
++	port = plc3xx_gpio_port(gpio);
++	if (port == 0) {
++		return -EINVAL;
++	}
++	pin = plc3xx_gpio_pin(gpio);
++
++	plc3xx_gpio_pin_out(port, pin);
++
++	return gpio_set_value(gpio, value);
++}
++
++int gpio_set_value(unsigned gpio, int value)
++{
++	AT91PS_PIO port;
++	int pin;
++
++	port = plc3xx_gpio_port(gpio);
++	if (port == 0) {
++		return -EINVAL;
++	}
++	pin = plc3xx_gpio_pin(gpio);
++	
++	if (value != 0) {
++		writel(1 << pin, port->PIO_SODR);
++	} else {
++		writel(1 << pin, port->PIO_CODR);
++	}
++
++	return 0;	
++}
++
++int gpio_get_value(unsigned gpio)
++{
++	AT91PS_PIO port;
++	int pin;
++
++	port = plc3xx_gpio_port(gpio);
++	if (port == 0) {
++		return -EINVAL;
++	}
++	pin = plc3xx_gpio_pin(gpio);
++
++	return (readl(port->PIO_PDSR) & (1 << pin)) != 0;
++}
++
++#endif
++
++/*****************************************************************************/
++
++static void plc3xx_led_setup(struct gpio_led *gl)
++{
++	if (gl->port != 0) {
++		gl->pin = plc3xx_gpio_pin(gl->gpio);
++
++		plc3xx_gpio_pin_out(gl->port, gl->pin);
++
++		writel(1 << gl->pin, &gl->port->PIO_SODR);
++		gl->stat = 0;
++		gl->timer = get_timer(0);
++	}
++}
++
++static void plc3xx_led_init(void)
++{
++	int i;
++
++#if defined(CONFIG_OWEN_PLC323)
++	for (i = 0; i < sizeof(leds) / sizeof(*leds); ++i) {
++		leds[i].port = plc3xx_gpio_port(leds[i].gpio);
++		plc3xx_led_setup(leds + i);
++	}
++#elif defined(CONFIG_OWEN_PLC304)
++	leds[0].port = plc3xx_gpio_port(leds[0].gpio);
++	plc3xx_led_setup(leds + 0);
++#endif
++}
++
++
++void plc3xx_led_on(int n)
++{
++#if defined(CONFIG_OWEN_PLC304)
++	n = 0;
++#endif
++	if (n >= 0 && n < (sizeof(leds) / sizeof(*leds)) && leds[n].port != 0) {
++		writel(1 << leds[n].pin, &leds[n].port->PIO_CODR);
++		leds[n].stat = 1;
++		leds[n].timer = get_timer(0);
++	}
++}
++
++void plc3xx_led_off(int n)
++{
++#if defined(CONFIG_OWEN_PLC304)
++	n = 0;
++#endif
++	if (n >= 0 && n < (sizeof(leds) / sizeof(*leds)) && leds[n].port != 0) {
++		writel(1 << leds[n].pin, &leds[n].port->PIO_SODR);
++		leds[n].stat = 0;
++		leds[n].timer = get_timer(0);
++	}
++}
++
++void plc3xx_led_touch(int n)
++{
++	int period = CONFIG_SYS_HZ / 4;
++
++	if (n >= 0 && n < (sizeof(leds) / sizeof(*leds)) && leds[n].port != 0) {
++#if defined(CONFIG_OWEN_PLC304)
++		if (n == led_error) {
++			period = CONFIG_SYS_HZ / 8;
++		}
++#endif
++		if (get_timer(leds[n].timer) > period) {
++			if (leds[n].stat) {
++				plc3xx_led_off(n);
++			} else {
++				plc3xx_led_on(n);
++			}
++		}
++	}
++}
++
++/*****************************************************************************/
++
++void console_pb_title(int show_progress, char *fmt, ...)
++{
++	va_list args;
++
++	if (fmt == 0) {
++		plc3xx_led_off(led_link);
++		plc3xx_led_off(led_work);
++		pb_tl = 0;
++	} else {
++		plc3xx_led_on(led_link);
++		va_start(args, fmt);
++		printf("info: ");
++		vprintf(fmt, args);
++		va_end(args);
++		printf("\n");
++	}
++}
++
++void console_pb(size_t curr, size_t total)
++{
++	plc3xx_led_touch(led_work);
++}
++
++int console_msg(int type, const char *msg)
++{
++	int i;
++	ulong timer;
++
++	plc3xx_led_off(led_work);
++	plc3xx_led_off(led_link);
++	plc3xx_led_off(led_error);
++
++	if (type == 0) {
++		printf("msg: %s\n", msg);
++		return 0;
++	} else if (type > 0) {
++		printf("warning: %s\n", msg);
++		return 0;
++	} else {
++		printf("error: %s\n", msg);
++		/* show LEDs error status */
++		timer = get_timer(0);
++
++		while (get_timer(timer) < CONFIG_SYS_HZ * 10) {
++			plc3xx_led_touch(led_error);
++		}
++		plc3xx_led_on(led_error);
++		return 1;
++	}
++}
++
++/* */
++
++#if defined(CUSTOM_BOARD_NAME)
++
++static const char *fwflist[] = {
++	"/" CUSTOM_BOARD_NAME "u.bin",	// u-boot
++	"/" CUSTOM_BOARD_NAME "f.bin",	// full
++};
++
++#else
++
++static const char *fwflist[] = {
++	"/" CONFIG_BOARD_NAME "u.bin",	// u-boot
++	"/" CONFIG_BOARD_NAME "f.bin",	// full
++};
++
++#endif
++
++int plc3xx_stuck_after_fwupd(void) 
++{
++	/* set leds */
++	while (1) {
++		plc3xx_led_touch(led_error);
++	}
++
++	return 0;
++}
++
++int plc3xx_flash_update(void)
++{
++	int i;
++	char dummy;
++
++	plc3xx_led_off(led_link);
++	plc3xx_led_on(led_work);
++
++#if defined(CONFIG_MMC)
++	char *s = getenv("fwdev");
++
++	if (s != 0 && (strcmp(s, "mmc") == 0 || strcmp(s, "sd") == 0)) {
++		if (run_command("mmc init", 0) < 0) {
++			goto done_no_usb;
++		}
++	} else
++#endif
++	{
++		if (run_command("usb start", 0) < 0) {
++			goto done_no_usb;
++		}
++	}
++
++
++	if (fwdev_find_upd_device(fwflist, sizeof(fwflist) / sizeof(*fwflist)) == 0) {
++		goto done_no_usb;
++	}
++	for (i = 0; i < sizeof(fwflist) / sizeof(*fwflist); i++) {
++		if (do_fat_read_at(fwflist[i], 0, &dummy, sizeof(dummy), 0) == sizeof(dummy)) {
++			return process_firmware(fwflist[i], 0);
++		}
++	}
++done_no_usb:
++	return 0;
++}
++
++int plc3xx_init(void)
++{
++	AT91PS_PIO port;
++	int pin;
++
++	writel(1 << 4, &AT91C_BASE_PMC->PMC_PCER);
++	
++	port = plc3xx_gpio_port(FWUPD_CHECK_PIN);
++	if (port != 0) {
++		pin = plc3xx_gpio_pin(FWUPD_CHECK_PIN);
++		plc3xx_gpio_pin_in(port, pin);
++		fwupd_init_state = (port->PIO_PDSR & (1 << pin)) != 0;
++	}
++
++	plc3xx_led_init();
++}
++
+Index: common/usb_hub.c
+===================================================================
+--- u-boot.old/common/usb_hub.c	(.../tags/plc30x-base)	(revision 2406)
++++ u-boot.new/common/usb_hub.c	(.../branches/plc30x)	(revision 2406)
+@@ -66,7 +66,8 @@
+  * Probes device for being a hub and configurate it
+  */
+ 
+-//#define	USB_HUB_DEBUG
++/*#define	USB_HUB_DEBUG*/
++#undef USB_HUB_DEBUG
+ 
+ #ifdef	USB_HUB_DEBUG
+ #define USB_HUB_PRINTF(fmt,args...)	do { printf("%s:%d/%s(): ", __FILE__, __LINE__, __func__); printf (fmt ,##args); } while (0)
+
+Property changes on: .
+___________________________________________________________________
+Modified: svn:mergeinfo
+   Merged /u-boot/tags/plc30x-base:r1417-2255
+

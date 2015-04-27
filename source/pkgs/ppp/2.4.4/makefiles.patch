@@ -1,0 +1,158 @@
+--- ppp-1/chat/Makefile.linux	2006-06-04 08:07:46.000000000 +0300
++++ ppp-2/chat/Makefile.linux	2009-03-11 13:48:41.000000000 +0200
+@@ -25,8 +25,7 @@
+ 
+ install: chat
+ 	mkdir -p $(BINDIR) $(MANDIR)
+-	$(INSTALL) -s -c chat $(BINDIR)
+-	$(INSTALL) -c -m 644 chat.8 $(MANDIR)
++	$(INSTALL) -c chat $(BINDIR)
+ 
+ clean:
+ 	rm -f chat.o chat *~
+--- ppp-1/pppd/Makefile.linux	2006-06-04 08:07:46.000000000 +0300
++++ ppp-2/pppd/Makefile.linux	2009-03-11 13:53:22.000000000 +0200
+@@ -117,7 +117,7 @@
+ #LIBS     += -lshadow $(LIBS)
+ endif
+ 
+-ifneq ($(wildcard /usr/include/crypt.h),)
++ifneq ($(wildcard @CROSS_PATH@/include/crypt.h),)
+ CFLAGS  += -DHAVE_CRYPT_H=1
+ LIBS	+= -lcrypt
+ endif
+@@ -169,7 +169,7 @@
+ endif
+ 
+ ifdef FILTER
+-ifneq ($(wildcard /usr/include/pcap-bpf.h),)
++ifneq ($(wildcard @CROSS_PATH@/include/pcap-bpf.h),)
+ LIBS    += -lpcap
+ CFLAGS  += -DPPP_FILTER
+ endif
+@@ -200,10 +200,9 @@
+ install: pppd
+ 	mkdir -p $(BINDIR) $(MANDIR)
+ 	$(EXTRAINSTALL)
+-	$(INSTALL) -s -c -m 555 pppd $(BINDIR)/pppd
++	$(INSTALL) -c -m 555 pppd $(BINDIR)/pppd
+ 	if chgrp pppusers $(BINDIR)/pppd 2>/dev/null; then \
+ 	  chmod o-rx,u+s $(BINDIR)/pppd; fi
+-	$(INSTALL) -c -m 444 pppd.8 $(MANDIR)
+ 
+ pppd: $(PPPDOBJS)
+ 	$(CC) $(CFLAGS) $(LDFLAGS) -o pppd $(PPPDOBJS) $(LIBS)
+--- ppp-1/pppd/plugins/Makefile.linux	2006-06-04 08:04:14.000000000 +0300
++++ ppp-2/pppd/plugins/Makefile.linux	2009-03-11 14:04:14.000000000 +0200
+@@ -1,4 +1,4 @@
+-CC	= gcc
++#CC	= gcc
+ COPTS	= -O2 -g
+ CFLAGS	= $(COPTS) -I.. -I../../include -fPIC
+ LDFLAGS	= -shared
+--- ppp-1/pppd/plugins/pppoatm/Makefile.linux	2004-11-14 03:12:10.000000000 +0200
++++ ppp-2/pppd/plugins/pppoatm/Makefile.linux	2009-03-11 14:05:16.000000000 +0200
+@@ -1,4 +1,4 @@
+-CC	= gcc
++#CC	= gcc
+ COPTS	= -O2 -g
+ CFLAGS	= $(COPTS) -I../.. -I../../../include -fPIC
+ LDFLAGS	= -shared
+@@ -6,7 +6,7 @@
+ 
+ #***********************************************************************
+ 
+-DESTDIR = @DESTDIR@
++DESTDIR = $(INSTROOT)@DESTDIR@
+ LIBDIR = $(DESTDIR)/lib/pppd/$(VERSION)
+ 
+ VERSION = $(shell awk -F '"' '/VERSION/ { print $$2; }' ../../patchlevel.h)
+--- ppp-1/pppd/plugins/radius/Makefile.linux	2006-06-04 08:04:14.000000000 +0300
++++ ppp-2/pppd/plugins/radius/Makefile.linux	2009-03-11 16:27:06.000000000 +0200
+@@ -36,11 +36,9 @@
+ 
+ install: all
+ 	$(INSTALL) -d -m 755 $(LIBDIR)
+-	$(INSTALL) -s -c -m 755 radius.so $(LIBDIR)
+-	$(INSTALL) -s -c -m 755 radattr.so $(LIBDIR)
+-	$(INSTALL) -s -c -m 755 radrealms.so $(LIBDIR)
+-	$(INSTALL) -c -m 444 pppd-radius.8 $(MANDIR)
+-	$(INSTALL) -c -m 444 pppd-radattr.8 $(MANDIR)
++	$(INSTALL) -c -m 755 radius.so $(LIBDIR)
++	$(INSTALL) -c -m 755 radattr.so $(LIBDIR)
++	$(INSTALL) -c -m 755 radrealms.so $(LIBDIR)
+ 
+ radius.so: radius.o libradiusclient.a
+ 	$(CC) -o radius.so -shared radius.o libradiusclient.a
+--- ppp-1/pppd/plugins/rp-pppoe/Makefile.linux	2006-06-04 08:07:46.000000000 +0300
++++ ppp-2/pppd/plugins/rp-pppoe/Makefile.linux	2009-03-11 14:12:16.000000000 +0200
+@@ -39,9 +39,9 @@
+ 
+ install: all
+ 	$(INSTALL) -d -m 755 $(LIBDIR)
+-	$(INSTALL) -s -c -m 4550 rp-pppoe.so $(LIBDIR)
++	$(INSTALL) -c -m 4550 rp-pppoe.so $(LIBDIR)
+ 	$(INSTALL) -d -m 755 $(BINDIR)
+-	$(INSTALL) -s -c -m 555 pppoe-discovery $(BINDIR)
++	$(INSTALL) -c -m 555 pppoe-discovery $(BINDIR)
+ 
+ clean:
+ 	rm -f *.o *.so
+--- ppp-1/pppstats/Makefile.linux	2006-06-04 08:07:46.000000000 +0300
++++ ppp-2/pppstats/Makefile.linux	2009-03-11 13:55:21.000000000 +0200
+@@ -22,8 +22,7 @@
+ 
+ install: pppstats
+ 	-mkdir -p $(MANDIR)
+-	$(INSTALL) -s -c pppstats $(BINDIR)
+-	$(INSTALL) -c -m 444 pppstats.8 $(MANDIR)
++	$(INSTALL) -c pppstats $(BINDIR)
+ 
+ pppstats: $(PPPSTATSRCS)
+ 	$(CC) $(CFLAGS) -o pppstats pppstats.c $(LIBS)
+--- ppp-1/pppdump/Makefile.linux	2006-06-04 08:04:14.000000000 +0300
++++ ppp-2/pppdump/Makefile.linux	2009-03-11 13:57:02.000000000 +0200
+@@ -17,5 +17,4 @@
+ 
+ install:
+ 	mkdir -p $(BINDIR) $(MANDIR)
+-	$(INSTALL) -s -c pppdump $(BINDIR)
+-	$(INSTALL) -c -m 444 pppdump.8 $(MANDIR)
++	$(INSTALL) -c pppdump $(BINDIR)
+--- ppp-1/configure	2005-07-09 03:23:05.000000000 +0300
++++ ppp-2/configure	2009-03-11 19:51:50.000000000 +0200
+@@ -4,6 +4,7 @@
+ # Where to install stuff by default
+ DESTDIR=/usr/local
+ SYSCONF=/etc
++CROSS_PATH=/usr
+ 
+ #  if [ -d /NextApps ]; then
+ #    system="NeXTStep"
+@@ -166,7 +167,7 @@
+ 	    val=`expr "x$arg" : 'x[^=]*=\(.*\)'`
+ 	    arg=`expr "x$arg" : 'x\([^=]*\)=.*'`
+ 	    ;;
+-	--prefix|--sysconf)
++	--prefix|--sysconf|--crosspath)
+ 	    if [ $# -eq 0 ]; then
+ 		echo "error: the $arg argument requires a value" 1>&2
+ 		exit 1
+@@ -178,6 +179,7 @@
+     case $arg in
+ 	--prefix)	DESTDIR=$val ;;
+ 	--sysconfdir)	SYSCONF=$val ;;
++	--crosspath)	CROSS_PATH=$val;;
+     esac
+ done
+ 
+@@ -185,7 +187,8 @@
+     rm -f $2
+     if [ -f $1 ]; then
+ 	echo "  $2 <= $1"
+-	sed -e "s,@DESTDIR@,$DESTDIR,g" -e "s,@SYSCONF@,$SYSCONF,g" $1 >$2
++	sed -e "s,@DESTDIR@,$DESTDIR,g" -e "s,@SYSCONF@,$SYSCONF,g" \
++	    -e "s,@CROSS_PATH@,$CROSS_PATH,g" $1 >$2
+     fi
+ }
+ 

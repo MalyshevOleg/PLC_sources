@@ -1,0 +1,11 @@
+diff -uNr binutils-2.19.1-old/missing binutils-2.19.1-new/missing
+--- binutils-2.19.1-old/missing	2005-07-14 04:24:56.000000000 +0300
++++ binutils-2.19.1-new/missing	2015-03-26 12:01:40.466480800 +0300
+@@ -299,7 +299,6 @@
+     fi
+     # If the file does not exist, the user really needs makeinfo;
+     # let's fail without touching anything.
+-    test -f $file || exit 1
+     touch $file
+     ;;
+ 

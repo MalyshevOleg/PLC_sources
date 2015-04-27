@@ -1,0 +1,11 @@
+--- a/Makefile.in	2010-03-16 04:52:19.000000000 +0200
++++ b/Makefile.in	2011-02-17 19:14:53.000000000 +0200
+@@ -401,7 +401,7 @@
+ 	gio-2.0-uninstalled.pc.in gio-unix-2.0-uninstalled.pc.in
+ TEST_PROGS = 
+ AUTOMAKE_OPTIONS = 1.7
+-SUBDIRS = . m4macros glib gmodule gthread gobject gio tests po docs
++SUBDIRS = . m4macros glib gmodule gthread gobject gio po docs
+ DIST_SUBDIRS = $(SUBDIRS) build
+ bin_SCRIPTS = glib-gettextize
+ AM_CPPFLAGS = \

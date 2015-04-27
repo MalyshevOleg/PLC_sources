@@ -1,0 +1,21 @@
+--- fakeroot/Makefile.am.orig	2006-04-19 11:50:35.000000000 -0600
++++ fakeroot/Makefile.am	2006-04-19 11:50:59.000000000 -0600
+@@ -1,6 +1,6 @@
+ AUTOMAKE_OPTIONS=foreign
+ ACLOCAL_AMFLAGS = -I build-aux
+-SUBDIRS=scripts doc test
++SUBDIRS=scripts test
+ 
+ noinst_LTLIBRARIES = libcommunicate.la libmacosx.la
+ libcommunicate_la_SOURCES = communicate.c
+--- fakeroot/Makefile.in.orig	2006-04-19 11:50:43.000000000 -0600
++++ fakeroot/Makefile.in	2006-04-19 11:51:21.000000000 -0600
+@@ -293,7 +293,7 @@
+ top_srcdir = @top_srcdir@
+ AUTOMAKE_OPTIONS = foreign
+ ACLOCAL_AMFLAGS = -I build-aux
+-SUBDIRS = scripts doc test
++SUBDIRS = scripts test
+ noinst_LTLIBRARIES = libcommunicate.la libmacosx.la
+ libcommunicate_la_SOURCES = communicate.c
+ libmacosx_la_SOURCES = libfakeroot_inode64.c libfakeroot_unix2003.c patchattr.h

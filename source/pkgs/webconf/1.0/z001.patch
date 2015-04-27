@@ -1,0 +1,17 @@
+diff -uNr webconfig-1.6_orig/wc/wc_page_dt.c webconfig-1.6/wc/wc_page_dt.c
+--- webconfig-1.6_orig/wc/wc_page_dt.c	2014-12-19 14:37:15.575778586 +0400
++++ webconfig-1.6/wc/wc_page_dt.c	2014-12-19 14:40:38.071790253 +0400
+@@ -18,7 +18,12 @@
+ 
+ #include "wc_strings.h"
+ 
+-#define RTC_DEV_FILE	"/dev/rtc"
++#define STD_RTC
++#ifdef STD_RTC
++    #define RTC_DEV_FILE	"/dev/rtc0"
++#else
++    #define RTC_DEV_FILE	"/dev/rtc"
++#endif
+ 
+ typedef enum {
+ 	DT_HOUR =	0,

@@ -1,0 +1,1519 @@
+diff -Naur webconfig-1.6/wc/Makefile webconfig-1.6-new//wc/Makefile
+--- webconfig-1.6/wc/Makefile	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//wc/Makefile	2015-01-28 16:56:34.000000000 +0200
+@@ -22,6 +22,10 @@
+ VER_INC=0
+ endif
+ 
++ifeq ($(USE_NTP),1)
++WC_DEFS+=-D"USE_NTP=yes"
++endif
++
+ SRCDIR=.
+ VPATH=$(SRCDIR)
+ DEPDIR=./.deps
+@@ -61,6 +65,7 @@
+     wc_page_utils.c \
+     wc_utils_ping.c \
+     wc_strings.c \
++    wc_dt_ntp.c \
+     wc_conf_file.c \
+     jsmn.c
+ 
+diff -Naur webconfig-1.6/wc/wc_config.h webconfig-1.6-new//wc/wc_config.h
+--- webconfig-1.6/wc/wc_config.h	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//wc/wc_config.h	2015-01-26 18:37:24.000000000 +0200
+@@ -3,7 +3,6 @@
+ 
+ /* --- common --- */
+ #define WC_CONFIG_MODEM_SPEED	115200
+-#define WC_CONFIG_MENU_NET_ROUTER
+ 
+ /* --- HE5684 ---*/
+ #if defined(OWEN_HE5684)
+@@ -47,7 +46,6 @@
+ #define WC_CONFIG_MENU_NET_GPRS
+ #define WC_CONFIG_MENU_NET_VPN
+ #define WC_CONFIG_MENU_NET_DDNS
+-#define WC_CONFIG_MENU_NET_WD
+ #define WC_CONFIG_MENU_UTILS_PING
+ 
+ /* --- PLC304 (ru,1251) ---*/
+@@ -76,7 +74,6 @@
+ #define WC_CONFIG_NO_AUTO_GPRS
+ #define WC_CONFIG_MENU_NET_VPN
+ #define WC_CONFIG_MENU_NET_DDNS
+-#define WC_CONFIG_MENU_NET_ROUTER
+ #define WC_CONFIG_MENU_UTILS_PING
+ 
+ /* --- default ---*/
+@@ -94,14 +91,23 @@
+ #define WC_CONFIG_MENU_NET_IDS
+ #endif
+ 
++
++#if defined(USE_NTP) 
++#define WC_CONFIG_MENU_DT_NTP
++#endif
++
+ /* common calculated definitions */
+ 
++#if defined(WC_CONFIG_MENU_DT_NTP)
++#define WC_CONFIG_MENU_DT_SUBMENU
++#endif
++
++
+ #if defined(WC_CONFIG_MENU_NET_GPRS) || \
+ 	defined(WC_CONFIG_MENU_NET_VPN) || \
+ 	defined(WC_CONFIG_MENU_NET_DDNS) || \
+         defined(WC_CONFIG_MENU_NET_WD) || \
+-        defined(WC_CONFIG_MENU_NET_IDS) || \
+-	defined(WC_CONFIG_MENU_NET_ROUTER)
++        defined(WC_CONFIG_MENU_NET_IDS)
+ #define WC_CONFIG_MENU_NET_SUBMENU
+ #endif
+ #if defined(WC_CONFIG_MENU_NET_GPRS) || defined(WC_CONFIG_MENU_NET_VPN)
+diff -Naur webconfig-1.6/wc/wc_dt.h webconfig-1.6-new//wc/wc_dt.h
+--- webconfig-1.6/wc/wc_dt.h	1970-01-01 03:00:00.000000000 +0300
++++ webconfig-1.6-new//wc/wc_dt.h	2015-01-12 12:47:36.000000000 +0200
+@@ -0,0 +1,11 @@
++#ifndef _WC_DT_H_
++#define _WC_DT_H_
++
++
++#define WC_DT_SP_NAME_MAIN		"main"
++#define WC_DT_SP_NAME_NTP		"ntp"
++
++#define RTC_DEV_FILE	"/dev/rtc"
++
++
++#endif /* _WC_DT_H_ */
+diff -Naur webconfig-1.6/wc/wc_dt_ntp.c webconfig-1.6-new//wc/wc_dt_ntp.c
+--- webconfig-1.6/wc/wc_dt_ntp.c	1970-01-01 03:00:00.000000000 +0300
++++ webconfig-1.6-new//wc/wc_dt_ntp.c	2015-01-30 14:06:19.000000000 +0200
+@@ -0,0 +1,392 @@
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <unistd.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <errno.h>
++#include <dirent.h>
++#include <ctype.h>
++#include "cgic.h"
++
++#include "wc_tpl.h"
++#include "wc_page.h"
++#include "wc_dt_ntp.h"
++
++#include "wc_strings.h"
++
++#ifdef WC_CONFIG_MENU_DT_NTP
++
++#define HVAR_NTP_SERVERS	"ntp_servers"
++#define HVAR_NTP_MODE		"ntp_mode"
++
++static wc_form_button_t ntp_btn_apply = {
++	.title = WC_STR_APPLY,
++	.name = WC_NAME_FORM_SUBMIT,
++	.type = WC_FBT_SUBMIT,
++};
++
++typedef struct ntp_data_t {
++	wc_page_data_t *pdata;
++	int ntp_servers_count; // -1 if ntp is off, 0 - if nmea, else count ntp servers
++	char ntp_servers[8][128];
++} ntp_data_t;
++
++static ntp_data_t ntp;
++
++static char sResult[1024];
++
++
++
++/* Commands */
++
++/* Vars */
++
++static const char *get_var_ntp(char *field);
++static wc_tpl_var_t ntp_var = {	
++	.name = "ntp", .get = get_var_ntp,
++};
++
++/* local methods */
++static int get_current_settings(wc_page_data_t *data);
++static int apply_new_settings(wc_page_data_t *data);
++
++/* inline methods */
++
++/* --- Command handlers --- */
++
++/* --- Var handlers --- */
++
++static const char *get_var_ntp(char *field)
++{
++  int nom;
++  int i;
++  memset(sResult,0x0,1024);
++  
++  if (field) {
++    nom = atoi(field);
++    if (nom == 1) {
++      sprintf(sResult,"%d", ntp.ntp_servers_count);    
++      return sResult;
++    }
++    else if (nom == 2) {
++      for(i=0; i<ntp.ntp_servers_count; i++) {
++        strcat(sResult,ntp.ntp_servers[i]);
++        if( (i+1) < ntp.ntp_servers_count )
++          strcat(sResult,"&#10;");
++      }
++      return sResult;
++    }
++    else if (nom == 0 ) {
++      if( ntp.ntp_servers_count == -1 )
++        return "mode_off"; 
++      else if( ntp.ntp_servers_count == 0 )  
++        return "mode_nmea"; 
++      else if( ntp.ntp_servers_count > 0 )  
++        return "mode_ntp"; 
++      else
++        return NULL;
++    }
++    else
++      return NULL;
++  }
++  else 
++    return NULL;
++}
++/* --- Interface methods --- */
++
++void wc_dt_ntp_process(wc_page_data_t *data, int submitted)
++{
++	memset(&ntp, 0, sizeof(ntp));
++	ntp.pdata = data;
++
++	if (submitted) {
++		apply_new_settings(data);
++	}
++
++	get_current_settings(data);
++	
++	wc_tpl_var_register(&ntp_var);
++	wc_form_enable(WC_FBA_RIGHT, &ntp_btn_apply, NULL, NULL);
++	ntp.pdata->flags.cntdn = 1;
++}
++
++void wc_dt_ntp_post_process(wc_page_data_t *data)
++{
++}
++
++/* --- local subroutines --- */
++
++int stat_ntp(char *rez) {
++  FILE *fp;
++  char ioline[1025];
++  int cc;
++  char *p;
++  char *s, *sp, is_local_ntp, is_ntp_set;
++  
++    
++  fp = popen("sh -c \"/usr/sbin/ntpq -pn\"","r");
++  if( fp == NULL ) {
++    return -1;
++  }
++  
++  cc = 0;
++  while(fgets(ioline,sizeof(ioline)-1,fp) != NULL ) {
++    strcat(rez,ioline);
++  }
++  p = strtok(rez,"\n");
++  p = strtok(NULL,"\n");
++  p = strtok(NULL,"\n");
++  is_ntp_set = 0;
++  while(p) {
++    if( p[0] == '*' ) {
++      is_ntp_set = 1;
++      s = strdup(p);
++      sp = strtok(s," ");
++      if( !strcmp(sp+1,"127.127.1.0") ) {
++        is_local_ntp = 1;
++      }
++      else 
++        is_local_ntp = 0;
++      free(sp);
++      break;
++    }
++    
++    p = strtok(NULL,"\n");
++  }
++  
++  pclose(fp);
++  if( is_ntp_set ) {
++    if( !is_local_ntp ) return 0;
++    else return 1;
++  }
++  else
++    return 2;
++}
++
++int kill_ntp(int ntp_pid) {
++  char cmd[64] = {0x0};
++   
++  if( ntp_pid > 0 ) {
++    sprintf(cmd,"sh -c \"/bin/kill -9 %d\"",ntp_pid);
++    system(cmd);
++    return 0;
++  }
++  else 
++    return 1;
++}
++
++int run_ntp() {
++  char cmd[128] = {0x0};
++  
++  kill_ntp(  pidof("ntpd") );
++  strcpy(cmd,"sh -c \"/usr/sbin/ntpd -c /etc/ntp.conf\"");
++  system(cmd);
++  return 0;
++}
++
++
++static int get_current_settings(wc_page_data_t *data)
++{
++	FILE *f;
++	char iostr[2048];
++	char *p;
++	int ntp_pid;
++	char is_nmea;
++	int ntp_stat_ret;
++	
++	ntp_pid = pidof("ntpd");
++	if( ntp_pid == -1 ) {
++	  ntp.ntp_servers_count = -1;
++	}
++	else {
++	
++	  ntp.ntp_servers_count = 0;
++	  f = fopen("/etc/ntp.conf","r");
++	  if( f ) {
++	    is_nmea = 0;
++	    while( !feof(f) ) {
++	      if( fgets(iostr,sizeof(iostr),f) ) {
++	        if(strstr(iostr,"server ")) { 
++		  p = strtok(iostr+7," ");
++                  if( p[strlen(p)-1] == '\n' ) p[strlen(p)-1] = 0x0;
++		  if( strcmp(p,"127.127.20.0") ) {
++		    if( strcmp(p,"127.127.1.0") ) {
++		      memset(ntp.ntp_servers[ntp.ntp_servers_count],0x0,128);
++		      strcpy(ntp.ntp_servers[ntp.ntp_servers_count],p);
++                      p =  ntp.ntp_servers[ntp.ntp_servers_count];
++		      ntp.ntp_servers_count++;
++                    }
++                  }
++                  else {
++                    is_nmea = 1;
++                    break; // NMEA mode
++                  }
++		}
++	      }
++	    }  
++	    fclose(f);
++	    if( ntp.ntp_servers_count == 0 && is_nmea == 0 ) {
++	      ntp.ntp_servers_count = -1;
++	      sprintf(data->status_buf, "ntp config file error. Stopping ntp ...");
++	      kill_ntp(ntp_pid);
++	      return -1;
++	    }
++	  }
++	  else {
++	    sprintf(data->status_buf, "ntp config file not found");
++	    return -1;
++	  }
++        }
++      
++        if( ntp.ntp_servers_count == -1 ) {
++	    sprintf(data->status_buf, WC_STR_DT_13);
++        }
++        else {
++            memset(iostr,0x0,2048);
++            ntp_stat_ret = stat_ntp(iostr);
++            if( !ntp_stat_ret )
++              sprintf(data->status_buf, WC_STR_DT_12);
++            else {
++              if( ntp_stat_ret == 1 )
++	        sprintf(data->status_buf, WC_STR_DT_15);
++              else if( ntp_stat_ret == 2 )
++	        sprintf(data->status_buf, "%s<br><a href=setup.cgi?p=dt&sp=ntp>%s</a>",WC_STR_DT_11,WC_STR_DT_14);
++              else {
++	        sprintf(data->status_buf,WC_STR_DT_16);
++              }
++            }
++        }
++      
++        return 0;
++}
++
++
++static int apply_new_settings(wc_page_data_t *data)
++{
++	cgiFormResultType fr;
++	FILE *f;
++	char ta_buff[1024];
++	char *p;
++	int i;
++
++	memset(ta_buff,0x0,1024);
++	fr = cgiFormString(HVAR_NTP_MODE, ta_buff, sizeof(ta_buff));
++	if (fr == cgiFormSuccess && ta_buff[0]) {
++// stop ntp service 
++	  if(!strcmp(ta_buff,"off")) {
++	    kill_ntp( pidof("ntpd") );
++       	    f = fopen(NTP_CONFIG_FILENAME,"w");
++       	    fputs("stopped",f);
++       	    fclose(f);
++	    return 0;
++          }
++// set ntp mode
++       	    if (!strcmp(ta_buff,"ntp")) {
++	      memset(ta_buff,0x0,1024);
++	      fr = cgiFormString(HVAR_NTP_SERVERS, ta_buff, sizeof(ta_buff));
++	      if (fr == cgiFormSuccess && ta_buff[0]) {
++        	ntp.ntp_servers_count = 0;
++        	p = strtok(ta_buff,"\n");
++        	while(p != NULL) {
++        	  strcpy(ntp.ntp_servers[ntp.ntp_servers_count],p);
++        	  ntp.ntp_servers_count++;
++        	  p = strtok(NULL,"\n");
++        	}
++        	if( ntp.ntp_servers_count) {
++        	  f = fopen(NTP_CONFIG_FILENAME,"w");
++        	  
++        	  if(f) {
++        	    for(i=0; i<ntp.ntp_servers_count; i++) {
++        	      fwrite("server ",1,7,f);
++        	      fwrite(ntp.ntp_servers[i],1,strlen(ntp.ntp_servers[i]),f);
++        	      if (!i) fwrite(" brust prefer\n",1,14,f);
++        	      else fwrite("\n",1,1,f);
++        	    }
++        	    for(i=0; i<ntp.ntp_servers_count; i++) {
++    	              fputs("restrict ",f);
++        	      fwrite(ntp.ntp_servers[i],1,strlen(ntp.ntp_servers[i]),f);
++        	      fwrite("\n",1,1,f);
++                    }
++        	    fputs("restrict 127.0.0.1\n",f);
++        	    fputs("restrict default notrust nomodify nopeer\n",f);
++        	    fputs("driftfile /etc/ntp.drift\n",f);
++        	    fclose(f);
++          	    run_ntp();
++        	  }
++        	}
++              }
++	    }
++// set NMEA mode
++	    else if (!strcmp(ta_buff,"nmea")) {
++       	      f = fopen(NTP_CONFIG_FILENAME,"w");
++              if(f) {
++                fputs("server 127.127.20.0 mode 18 prefer\n",f);
++                fputs("fudge 127.127.20.0 \n",f);
++        	fputs("restrict 127.0.0.1\n",f);
++        	fputs("restrict default notrust nomodify nopeer\n",f);
++                fputs("driftfile /etc/ntp.drift\n",f);
++       	        fclose(f);
++       	        run_ntp();
++              }
++	    }
++	}
++        return 0;	
++	
++}
++
++int check_if_number( char *str) {
++  int i;
++  for(i=0; str[i] != '\0'; i++) {
++    if( !isdigit(str[i]) ) return 0;
++  }
++  return 1;
++}
++
++
++int pidof (char *pname)
++{
++  DIR *dirp;
++  FILE *fp;
++  struct dirent *entry;
++  char path[MAX_BUF], read_buf[MAX_BUF];
++  char *p, *p_str;
++          
++  dirp = opendir ("/proc/");
++  if (dirp == NULL)
++  {
++    perror ("Fail");  
++    return -1;
++  }
++                      
++  while ((entry = readdir (dirp)) != NULL)
++  {
++    if (check_if_number (entry->d_name))
++    {
++      strcpy (path, "/proc/");
++      strcat (path, entry->d_name);
++      strcat (path, "/cmdline");
++      fp = fopen (path, "r");
++      if (fp != NULL)
++      {
++        fgets(read_buf,sizeof(read_buf),fp);
++        p = strtok(read_buf,"/");
++        for(p_str = p; p != NULL; p = strtok(NULL,"/") ) {
++          p_str = p;
++        }
++        if ( !strcmp(p_str, pname) )
++        {
++          closedir (dirp);
++          fclose (fp);
++          return atoi(entry->d_name);
++        }    
++        fclose (fp);
++      }
++    }  
++  }    
++  closedir (dirp);
++  return -1;
++}                                                                                                                                                                       
++
++#endif /* WC_CONFIG_MENU_DT_NTP */
++
+diff -Naur webconfig-1.6/wc/wc_dt_ntp.h webconfig-1.6-new//wc/wc_dt_ntp.h
+--- webconfig-1.6/wc/wc_dt_ntp.h	1970-01-01 03:00:00.000000000 +0300
++++ webconfig-1.6-new//wc/wc_dt_ntp.h	2015-01-14 13:09:41.000000000 +0200
+@@ -0,0 +1,18 @@
++#ifndef _WC_DT_NTP_H_
++#define _WC_DT_NTP_H_
++
++#define NTP_CONFIG_FILENAME "/etc/ntp.conf"
++#define NTPD_PROG "/usr/sbin/ntpd"
++#define NTPQ_PROG "/usr/bin/ntpq"
++
++extern void wc_dt_ntp_process(wc_page_data_t *data, int submitted);
++extern void wc_dt_ntp_post_process(wc_page_data_t *data);
++
++#define MAX_BUF 1024
++#define PID_LIST_BLOCK 32
++ 
++int pidof (char *pname);
++ 
++	
++#endif /* _WC_DT_NTP_H_*/
++
+diff -Naur webconfig-1.6/wc/wc_main.c webconfig-1.6-new//wc/wc_main.c
+--- webconfig-1.6/wc/wc_main.c	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//wc/wc_main.c	2015-01-29 14:56:18.000000000 +0200
+@@ -1,5 +1,7 @@
+ #include <stdio.h>
+ #include "cgic.h"
++#include <time.h>
++#include <sys/time.h>
+ #include <string.h>
+ #include <stdlib.h>
+ #include <stdarg.h>
+@@ -395,9 +397,61 @@
+ 
+ /* CGI entry */
+ 
++int exec_ajax(char *cmd) 
++{
++  FILE *fp;
++  char ioline[128];
++  char *p;
++  struct timeval tv;
++  struct timezone tz;
++  struct tm *t;
++  char *hw_time;
++  char *delt_rtc;  
++        
++  printf("Content-type: text/html; charset=windows-1251\n\n");
++  if( !strcmp(cmd,"localtime") ) {
++
++    fp = popen("sh -c \"/sbin/hwclock\"","r");
++    if( fp != NULL ) {
++      if( fgets(ioline,sizeof(ioline)-1,fp) != NULL ) {
++        p = strtok(ioline," ");
++        p = strtok(NULL," ");
++        p = strtok(NULL," ");
++        p = strtok(NULL," ");
++	if( p ) hw_time = strdup(p);
++        p = strtok(NULL," ");
++        p = strtok(NULL," ");
++	if( p ) delt_rtc = strdup(p);
++	        
++        gettimeofday(&tv,&tz);
++        t = localtime(&tv.tv_sec);
++        
++        printf("%02d:%02d:%02d %s %s",t->tm_hour, t->tm_min, t->tm_sec, (delt_rtc ? delt_rtc : "err"), (hw_time ? hw_time : "err") );
++        if(hw_time) free(hw_time);
++        if(delt_rtc) free(delt_rtc);
++        return 0;
++      }
++    }
++  }
++  gettimeofday(&tv,NULL);
++  t = localtime(&tv.tv_sec);
++  printf("%d:%d:%d err err",t->tm_hour, t->tm_min, t->tm_sec);
++  return -1;
++}
++
+ int cgiMain()
+ {
+ 	wc_menu_t *p = NULL;
++	char buf[32];
++	cgiFormResultType fr;
++
++
++	fr = cgiFormString("ajax",buf,sizeof(buf));
++	if( fr == cgiFormSuccess && buf[0] ) {
++	  exec_ajax(buf);
++	  return 0;
++	}
++	
+ 
+ 	dbg_log("cgiMain: entered\n");
+ /* see comments in wc_config.h */
+@@ -528,3 +582,4 @@
+ 	wc_tpl_var_register(&frmb_var);
+ }
+ 
++
+diff -Naur webconfig-1.6/wc/wc_net_ppp.c webconfig-1.6-new//wc/wc_net_ppp.c
+--- webconfig-1.6/wc/wc_net_ppp.c	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//wc/wc_net_ppp.c	2014-12-30 11:16:13.000000000 +0200
+@@ -508,7 +508,7 @@
+ 	char path_buf[WC_PATH_MAX];
+ 	char chunk[256];
+ 	FILE *fp;
+-//	int r;
++	int r;
+ 	ssize_t count;
+ 
+ 	if (ppp.mode != PPP_MODE_LOG) {
+@@ -527,7 +527,7 @@
+ 		while (!feof(fp)) {
+ 			count = fread(chunk, 1, sizeof(chunk), fp);
+ 			if (count > 0)  {
+-				/*r = */fwrite(chunk, count, 1, cgiOut);
++				r = fwrite(chunk, count, 1, cgiOut);
+ 				//dbg_console("read and written %d bytes from offs=%d: %d\n", count, ppp.log_offs, r);
+ 			}
+ 			if (count < sizeof(chunk)) {
+@@ -1406,8 +1406,8 @@
+ 
+ static int read_network_conf_var(char *var, char *val, void *data)
+ {
+-//	size_t len;
+-//	len = strlen(val);
++	size_t len;
++	len = strlen(val);
+ 	const char *auto_var;
+ 
+ 	auto_var = get_ppp_auto_var();
+diff -Naur webconfig-1.6/wc/wc_page_dt.c webconfig-1.6-new//wc/wc_page_dt.c
+--- webconfig-1.6/wc/wc_page_dt.c	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//wc/wc_page_dt.c	2015-01-30 14:12:57.000000000 +0200
+@@ -1,4 +1,5 @@
+ #include <sys/types.h>
++#include <sys/time.h>
+ #include <sys/stat.h>
+ #include <fcntl.h>
+ #include <sys/ioctl.h>
+@@ -13,6 +14,7 @@
+ #include "cgic.h"
+ 
+ #include "wc_tpl.h"
++#include "wc_dt.h"
+ #include "wc_page.h"
+ #include "wc_page_dt.h"
+ 
+@@ -20,11 +22,32 @@
+ 
+ #define STD_RTC
+ #ifdef STD_RTC
+-    #define RTC_DEV_FILE	"/dev/rtc0"
++    #define RTC_DEV_FILE        "/dev/rtc0"
+ #else
+-    #define RTC_DEV_FILE	"/dev/rtc"
++    #define RTC_DEV_FILE        "/dev/rtc"
+ #endif
+ 
++#ifdef WC_CONFIG_MENU_DT_NTP
++#include "wc_dt_ntp.h"
++#endif
++
++
++#ifdef WC_CONFIG_MENU_DT_SUBMENU
++static wc_menu_t submenu[] = {
++	{ .name = WC_DT_SP_NAME_MAIN,		.title = WC_STR_DT_MAIN,
++		.process = NULL,	.post_process = NULL, },
++
++#ifdef WC_CONFIG_MENU_DT_NTP
++	{ .name = WC_DT_SP_NAME_NTP,		.title = WC_STR_DT_NTP,
++		.process = wc_dt_ntp_process,	.post_process = wc_dt_ntp_post_process, },
++#endif
++
++	{ .name = NULL, },
++};
++#endif
++
++
++
+ typedef enum {
+ 	DT_HOUR =	0,
+ 	DT_MIN,
+@@ -37,7 +60,7 @@
+ } dt_type_t;
+ 
+ /* max string len is 5 for yyyy0  */
+-static char dt_str[6][5];
++static char dt_str[7][5];
+ static struct rtc_time rtc_tm;
+ 
+ /* Vars */
+@@ -62,7 +85,7 @@
+ 	}
+ 
+ 	i = *field - 0x30;
+-	if (i < 0 || i >= DT_TYPE_COUNT) {
++	if (i < 0 || i >= (DT_TYPE_COUNT+1)) {
+ 		return NULL;
+ 	}
+ 	return dt_str[i];
+@@ -72,6 +95,32 @@
+ 
+ void process_dt(wc_page_data_t *data, int submitted)
+ {
++#ifdef WC_CONFIG_MENU_DT_SUBMENU
++	wc_menu_t *sp = NULL;
++
++	wc_sub_menu_register(submenu);
++
++	/* Assume: main submenu is always present! 
++	* if only 1 submenu is defined - behave like no submenu was defined at all
++	*/
++	if (data->sub_count > 1) {
++		sp = &data->sub_pages[data->sub_index];
++		strcat(data->form_title, " - ");
++		strcat(data->form_title, sp->title);
++	}
++
++	/* call special processor for subpage if:
++	* - submenu is defined, i.e. sp != NULL
++	* - if sub page is not main - for main process right in this procedure
++	*/
++	if (sp && strcmp(sp->name, WC_DT_SP_NAME_MAIN)) {
++		if (sp->process) {
++			sp->process(data, submitted);
++		}
++		return;
++	}
++#endif
++
+ 	int i;
+ 
+ 	/* register vars & commands */
+@@ -94,6 +143,9 @@
+ {
+ 	int fd;
+ 	int r;
++	
++	struct timeval tv;
++	struct timezone tz;
+ 
+ 	fd = open(RTC_DEV_FILE, O_RDWR);
+ 	if (fd < 0) {
+@@ -119,6 +171,10 @@
+ 	sprintf(dt_str[DT_MON], "%d", rtc_tm.tm_mon < 12 ? rtc_tm.tm_mon + 1 : 0);
+ 	sprintf(dt_str[DT_YEAR], "%d", (rtc_tm.tm_year + 1900) <= 9999 ? rtc_tm.tm_year + 1900 : 0);
+ 
++	gettimeofday(&tv,&tz);
++	sprintf(dt_str[6], "%+d",-1* ((int)tz.tz_minuteswest/60));
++
++
+ 	return 0;
+ }
+ 
+diff -Naur webconfig-1.6/wc/wc_strings.c webconfig-1.6-new//wc/wc_strings.c
+--- webconfig-1.6/wc/wc_strings.c	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//wc/wc_strings.c	2015-01-30 12:55:44.000000000 +0200
+@@ -25,6 +25,29 @@
+ 	WC_STR_DT_0,
+ 	WC_STR_DT_1,
+ 	WC_STR_DT_2,
++	WC_STR_DT_3,
++	WC_STR_DT_4,
++	WC_STR_DT_5,
++	WC_STR_DT_6,
++	WC_STR_DT_7,
++	WC_STR_DT_8,
++	WC_STR_DT_9,
++	WC_STR_DT_10,
++	WC_STR_DT_11,
++	WC_STR_DT_12,
++	WC_STR_DT_13,
++	WC_STR_DT_14,
++	WC_STR_DT_15,
++	WC_STR_DT_16,
++	WC_STR_DT_17,
++	WC_STR_DT_18,
++	WC_STR_DT_19,
++	WC_STR_DT_20,
++	WC_STR_DT_21,
++	WC_STR_DT_22,
++	WC_STR_DT_23,
++	WC_STR_DT_24,
++	WC_STR_DT_25,
+ };
+ 
+ /* submenu's string arrays should be NULL-terminated */
+@@ -121,25 +144,6 @@
+ };
+ #endif
+ 
+-#ifdef WC_CONFIG_MENU_NET_ROUTER
+-static const char *strings_net_router[] = {
+-	WC_STR_NET_ROUTER,
+-	WC_STR_NET_ROUTER_FORWARD,
+-	WC_STR_NET_ROUTER_PROTO,
+-	WC_STR_NET_ROUTER_PORT,
+-	WC_STR_NET_ROUTER_FILTER,
+-	WC_STR_NET_ROUTER_HOSTS,
+-	WC_STR_NET_ROUTER_ADD_HOST,
+-	WC_STR_NET_ROUTER_CHANGE_HOST,
+-	WC_STR_NET_ROUTER_DELETE_HOST,
+-	WC_STR_NET_ROUTER_PORT_FILTER,
+-	WC_STR_STATUS_ERROR,
+-	WC_STR_NET_ROUTER_SAVE_CONFIG,
+-	WC_STR_NET_ROUTER_LOAD_CONFIG,
+-	WC_STR_NET_ROUTER_SAVE_MSG,
+-};
+-#endif
+-
+ static sub_strings_t strings_net[] = {
+ 	{ WC_NET_SP_NAME_MAIN,	strings_net_main,	ARRAY_SIZE(strings_net_main) },
+ #ifdef WC_CONFIG_MENU_NET_GPRS
+@@ -157,9 +161,6 @@
+ #ifdef WC_CONFIG_MENU_NET_IDS
+ 	{ WC_NET_SP_NAME_IDS,	strings_net_ids,		ARRAY_SIZE(strings_net_ids) },
+ #endif
+-#ifdef WC_CONFIG_MENU_NET_ROUTER
+-	{ WC_NET_SP_NAME_ROUTER, strings_net_router,		ARRAY_SIZE(strings_net_router) },
+-#endif
+ };
+ 
+ static const char *strings_sec[] = {
+diff -Naur webconfig-1.6/wc/wc_strings_en.h webconfig-1.6-new//wc/wc_strings_en.h
+--- webconfig-1.6/wc/wc_strings_en.h	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//wc/wc_strings_en.h	2014-12-30 11:16:13.000000000 +0200
+@@ -249,26 +249,5 @@
+ 
+ #define WC_STR_ERR_PING_START				"Failed to start ping: host IP/name is invalid"
+ 
+-
+-/* router */
+-
+-#define WC_STR_NET_ROUTER			"Router"
+-#define WC_STR_NET_ROUTER_FORWARD		"Forward"
+-#define WC_STR_NET_ROUTER_PROTO			"Proto"
+-#define WC_STR_NET_ROUTER_PORT			"Port"
+-#define WC_STR_NET_ROUTER_FILTER		"Filter"
+-#define WC_STR_NET_ROUTER_HOSTS			"Hosts"
+-#define WC_STR_NET_ROUTER_ADD_HOST		"Add"
+-#define WC_STR_NET_ROUTER_CHANGE_HOST		"Update"
+-#define WC_STR_NET_ROUTER_DELETE_HOST		"Delete"
+-#define WC_STR_NET_ROUTER_PORT_FILTER		"Port filter"
+-#define WC_STR_NET_ROUTER_SAVE_CONFIG           "Saving config"
+-#define WC_STR_NET_ROUTER_LOAD_CONFIG		"Loading config"
+-#define WC_STR_NET_ROUTER_SAVE_MSG		"Configuration saved<br>Settings will be applied after GPRS session restart"
+-
+-#define WC_STR_NET_ROUTER_SAVE_ERR_MSG		"failed to save config"
+-#define WC_STR_NET_ROUTER_SAVE_DONE_MSG		"ok"
+-
+-
+ #endif /*_WC_STRINGS_LANG_H_*/
+ 
+diff -Naur webconfig-1.6/wc/wc_strings_ru.h webconfig-1.6-new//wc/wc_strings_ru.h
+--- webconfig-1.6/wc/wc_strings_ru.h	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//wc/wc_strings_ru.h	2015-01-30 12:55:18.000000000 +0200
+@@ -61,6 +61,7 @@
+ #define WC_STR_BACK	"Назад"
+ #define WC_STR_CLOSE	"Закрыть"
+ #define WC_STR_CHECK	"Проверить"
++#define WC_STR_APPLY	"Применить"
+ #define WC_STR_WHOLE	"Вся память"
+ #define WC_STR_STANDARD_VALS	"Стандартные значения"
+ 
+@@ -74,7 +75,7 @@
+ #define WC_STR_M_TEST	"Тест"
+ 
+ /* menu-form title =str.ftitle */
+-#define WC_STR_DT_TITLE	"Установка даты/времени"
++#define WC_STR_DT_TITLE	"Дата/время"
+ #define WC_STR_NET_TITLE	"Сетевые настройки"
+ #define WC_STR_SEC_TITLE	"Установка пароля для пользователя www-data"
+ #define WC_STR_PLC_TITLE	"Другие настройки ПЛК"
+@@ -82,9 +83,36 @@
+ 
+ /* page-specifc =str.<PG>.<FIELD> */
+ 
++
++#define WC_STR_DT_MAIN	"Установка даты/времени"
++#define WC_STR_DT_NTP	"NTP"
+ #define WC_STR_DT_0		"Время (чч:мм:сс)"
+ #define WC_STR_DT_1		"Дата (дд/мм/гггг)"
+ #define WC_STR_DT_2		"Синхронизировать с PC"
++#define WC_STR_DT_3		"Источник точного времени"
++#define WC_STR_DT_4		"Нет"
++#define WC_STR_DT_5		"сервер NTP"
++#define WC_STR_DT_6		"NMEA 0183 приёмник "
++#define WC_STR_DT_7		"Период синхронизации"
++#define WC_STR_DT_8		"Cерверы точного времени <br><br> <button onClick='return setDefaultNtpServers();'> значения по умолчанию &gt;&gt;</button>"
++#define WC_STR_DT_9		"Убедитесь, что NMEA приёмник <br>подключен к COM порту  прибора"
++#define WC_STR_DT_10	"Состояние службы NTP"
++#define WC_STR_DT_11	"Служба NTP запущена. <br> Идет сбор статистических данных для синхронизации."
++#define WC_STR_DT_12	"Синхронизация времени установлена. <br> Служба NTP выполняется."
++#define WC_STR_DT_13	"Служба NTP остановлена."
++#define WC_STR_DT_14	"Обновить"
++#define WC_STR_DT_15	"Не удалось синхронизировать время.<br> Задайте более точно время ПЛК и(или) <br> уточните список серверов точного времени"
++#define WC_STR_DT_16	"Не удалось получить данные о состоянии службы NTP"
++#define WC_STR_DT_17	"Сверить время"
++#define WC_STR_DT_18	"ПЛК"
++#define WC_STR_DT_19	"РС"
++#define WC_STR_DT_20	"Время запроса"
++#define WC_STR_DT_21	"Свернуть"
++#define WC_STR_DT_22	"Отправлен"
++#define WC_STR_DT_23	"время"
++#define WC_STR_DT_24	"Часовой пояс PC"
++#define WC_STR_DT_25	"Часовой пояс ПЛК"
++
+ 
+ #define WC_STR_NET_MAIN	"Основное"
+ #define WC_STR_NET_GPRS	"GPRS"
+@@ -248,23 +276,5 @@
+ 
+ #define WC_STR_ERR_PING_START				"Ошибка старта ping: некорректное Имя или IP адрес"
+ 
+-/* router */
+-
+-#define WC_STR_NET_ROUTER			"Маршрутизатор"
+-#define WC_STR_NET_ROUTER_FORWARD		"Доступ в интернет"
+-#define WC_STR_NET_ROUTER_PROTO			"Протокол"
+-#define WC_STR_NET_ROUTER_PORT			"Порт"
+-#define WC_STR_NET_ROUTER_FILTER		"Фильтр"
+-#define WC_STR_NET_ROUTER_HOSTS			"Адреса"
+-#define WC_STR_NET_ROUTER_ADD_HOST		"Добавить"
+-#define WC_STR_NET_ROUTER_CHANGE_HOST		"Изменить"
+-#define WC_STR_NET_ROUTER_DELETE_HOST		"Удалить"
+-#define WC_STR_NET_ROUTER_PORT_FILTER		"Фильтрация портов"
+-#define WC_STR_NET_ROUTER_SAVE_CONFIG		"Сохранение конфигурации"
+-#define WC_STR_NET_ROUTER_LOAD_CONFIG		"Загрузка конфигурации"
+-#define WC_STR_NET_ROUTER_SAVE_MSG		"Конфигурация сохранена<br>Настройки вступят в силу после переподключения GPRS сессии"
+-#define WC_STR_NET_ROUTER_SAVE_ERR_MSG		"сбой сохранения конфигурации"
+-#define WC_STR_NET_ROUTER_SAVE_DONE_MSG		"ok"
+-
+ #endif /*_WC_STRINGS_LANG_H_*/
+ 
+diff -Naur webconfig-1.6/wc/wc_tpl.c webconfig-1.6-new//wc/wc_tpl.c
+--- webconfig-1.6/wc/wc_tpl.c	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//wc/wc_tpl.c	2014-12-30 11:16:13.000000000 +0200
+@@ -160,7 +160,6 @@
+ 	
+ 	tpl = fopen(full_fname, "r");
+ 	if (!tpl) {
+-		fprintf(cgiOut, "%s<br>", full_fname);
+ 		return errno;
+ 	}
+ 
+@@ -500,7 +499,7 @@
+ 				break;
+ 		}
+ 		if (sub_result) {
+-			fprintf(cgiOut, "err processing sub-template: (%s: %d)", pv.do_tpl, sub_result);
++			fprintf(cgiOut, "err processing sub-template");
+ 		}
+ 	}
+ 	return 0;
+diff -Naur webconfig-1.6/www/cgi/tpl/contents.tpl webconfig-1.6-new//www/cgi/tpl/contents.tpl
+--- webconfig-1.6/www/cgi/tpl/contents.tpl	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//www/cgi/tpl/contents.tpl	2015-01-06 11:16:11.000000000 +0200
+@@ -4,7 +4,7 @@
+ 		<table width="90%" align="center" border="0">
+ 			<tr><td nowrap align="center"><h3>{=str.ftitle}</h3></td></tr>
+ 			<!--tr><td>&nbsp;</td></tr-->
+-			<tr><td>{?pg=dt:.dt_form.tpl}
++			<tr><td>{?pg=dt:.dt.tpl}
+ 				{?pg=net:.net.tpl}
+ 				{?pg=sec:.sec_form.tpl}
+ 				{?pg=plc:.plc_form.tpl}
+diff -Naur webconfig-1.6/www/cgi/tpl/dt_form.tpl webconfig-1.6-new//www/cgi/tpl/dt_form.tpl
+--- webconfig-1.6/www/cgi/tpl/dt_form.tpl	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//www/cgi/tpl/dt_form.tpl	2015-01-30 12:59:34.000000000 +0200
+@@ -16,5 +16,88 @@
+ 			<input id="dt5" name="dt5" type="text" value="{=dt.5}" maxlength="4" size="4"></td></tr>
+ 	<tr><td>{=str.dt.2}</td>
+ 		<td><input id="sync" type="checkbox"></td></tr>
++	<tr><td>{=str.dt.25}</td>
++		<td>GTM{=dt.6}</td></tr>
++	<tr><td>{=str.dt.24}</td>
++		<td><span id="timezone_pc"></span></td></tr>
++	<tr><td><button onClick="return checkSyncTime();">{=str.dt.17}</button></td>
++	  <td><div style="display:none;" id='checkSyncTimePane'>
++		<table><tr><td>{=str.dt.18}</td><td><span id="plc_dt"></span></td><td>&nbsp;&nbsp;&nbsp;&nbsp;</td></tr>
++		<tr><td>RTC</td><td><span id="rtc_dt"></span></td></tr>
++		<tr><td>Delta (sec)</td><td><span id="delta_rtc"></span></td></tr>
++		<tr><td>{=str.dt.22}</td><td><span id="pc_dt"></span></td></tr>
++		<tr><td>{=str.dt.23}</td><td><span id="req_long"></span></td>
++			<td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<button onClick="return closeTimeSyncPane();">{=str.dt.21}</button></td>
++		</tr></table>
++	      </div>
++
++	  </td>
++	</tr>
+ </table>
+ 
++<script language="javascript">
++<!--
++var d  = new Date();
++var x1 = d.getTimezoneOffset() > 0 ? ("GTM-" + d.getTimezoneOffset()/60) : ("GTM+" + -1*d.getTimezoneOffset()/60);
++document.getElementById('timezone_pc').innerHTML = x1;
++
++function initXMLHTTPClient() {
++  var xhr;
++  try {
++    xhr = new XMLHttpRequest();
++  }
++  catch(e) {
++    var xmlhttp_ids = new Array(
++	'MSXML2.XMLHTTP.5.0',
++	'MSXML2.XMLHTTP.4.0',
++	'MSXML2.XMLHTTP.3.0',
++	'MSXML2.XMLHTTP',
++	'Microsoft.XMLHTTP');
++   var success = false;
++   for(var i=0; i<xmlhttp_ids.length && !success; i++) {
++     try {
++       xhr = new ActiveXObject(xmlhttp_ids[i]);
++       success = true;
++     } catch(e) {}
++   }
++   if( !success) {
++     throw new Error('Unable to create XMLHTTPRequest');
++   }	
++  }
++  return xhr;
++}
++
++
++function checkSyncTime() {
++  var dt0;
++  document.getElementById('checkSyncTimePane').style.display = "block";
++  var xhr = initXMLHTTPClient();
++  if( xhr ) {
++    xhr.onreadystatechange=function()  {
++       if( xhr.readyState==4 && xhr.status==200) {
++          var resp  = xhr.responseText;
++	  var arr = resp.split(" ");
++	  var req_long = new Date().getTime() - dt0.getTime();
++	
++  	  document.getElementById('pc_dt').innerHTML = dt0.getHours() + ":" + dt0.getMinutes() + ":" + dt0.getSeconds();
++  	  document.getElementById('req_long').innerHTML = req_long + " ms";
++  	  document.getElementById('plc_dt').innerHTML = arr[0];
++  	  document.getElementById('delta_rtc').innerHTML = arr[1];
++  	  document.getElementById('rtc_dt').innerHTML = arr[2];
++ 		
++       }   
++    }
++    xhr.open("GET","setup.cgi?ajax=localtime",true);
++    dt0 = new Date();	
++    xhr.send();
++  }
++
++  return false;
++}
++
++function closeTimeSyncPane() {
++  document.getElementById('checkSyncTimePane').style.display = "none";
++  return false;
++}
++//-->
++</script>
+diff -Naur webconfig-1.6/www/cgi/tpl/dt_ntp.tpl webconfig-1.6-new//www/cgi/tpl/dt_ntp.tpl
+--- webconfig-1.6/www/cgi/tpl/dt_ntp.tpl	1970-01-01 03:00:00.000000000 +0300
++++ webconfig-1.6-new//www/cgi/tpl/dt_ntp.tpl	2015-01-19 14:46:34.000000000 +0200
+@@ -0,0 +1,67 @@
++<script language="javascript">
++<!--
++
++function setDefaultNtpServers() {
++  document.getElementById("ntp_servers").value = "";
++  document.getElementById("ntp_servers").value = "0.pool.ntp.org\n1.pool.ntp.org\n2.pool.ntp.org";
++  return false; 
++}
++
++function onNtpModeClick(mode) {
++  if( document.getElementsByName('set')[0] ) {
++    document.getElementsByName('set')[0].removeAttribute('disabled');
++  }
++
++  if( document.getElementById('status') ) {
++   document.getElementById('status').innerHTML =  "";
++  }
++
++  document.getElementById('ntp_servers_row').style.display = "none";
++  document.getElementById('nmea_port_row').style.display = "none";
++  document.getElementById('mode_off').checked = false;
++  document.getElementById('mode_ntp').checked = false;
++  document.getElementById('mode_nmea').checked = false;
++  
++  if( mode == 'mode_ntp' ) {
++    document.getElementById('ntp_servers_row').style.display = "";
++  }
++  if( mode == 'mode_nmea' ) {
++    document.getElementById('nmea_port_row').style.display = "";
++  }
++
++  document.getElementById(mode).checked = true;
++
++}
++
++function NtpServersChanged() {
++    document.getElementsByName('set')[0].removeAttribute('disabled');
++}
++//-->
++</script>
++
++<table class="ft" cellpadding="5" cellspacing="5">
++	<tr>
++	  <td style="width:60%">{=str.dt.3}</td>
++	  <td style="width:40%">
++	    <input id="mode_off" name="ntp_mode" type="radio" onClick="onNtpModeClick('mode_off');" value="off"> {=str.dt.4}<br>
++	    <input id="mode_ntp" name="ntp_mode" type="radio" onClick="onNtpModeClick('mode_ntp');" value="ntp"> {=str.dt.5}<br>
++	    <input id="mode_nmea" name="ntp_mode" type="radio" onClick="onNtpModeClick('mode_nmea');" value="nmea"> {=str.dt.6}
++	  </td>
++        </tr>
++	<tr id="ntp_servers_row" style="display:none;">
++	  <td id="label_ntp_servers">{=str.dt.8}</td>
++	  <td>
++		<textarea id="ntp_servers" name="ntp_servers" rows=5 onKeyUp="NtpServersChanged();">{=ntp.2}</textarea>
++	  </td>
++        </tr>
++	<tr id="nmea_port_row" style="display:none;">
++	  <td id="label_nmea_port">{=str.dt.9}</td>
++	  <td></td>
++	</tr>
++</table>
++
++<script language="javascript">
++<!--
++onNtpModeClick("{=ntp.0}");
++//-->
++</script>
+diff -Naur webconfig-1.6/www/cgi/tpl/dt.tpl webconfig-1.6-new//www/cgi/tpl/dt.tpl
+--- webconfig-1.6/www/cgi/tpl/dt.tpl	1970-01-01 03:00:00.000000000 +0300
++++ webconfig-1.6-new//www/cgi/tpl/dt.tpl	2015-01-06 11:19:02.000000000 +0200
+@@ -0,0 +1,3 @@
++{?sp=main:.dt_form.tpl}
++{?sp=:.dt_form.tpl}
++{?sp=ntp:.dt_ntp.tpl}
+\ No newline at end of file
+diff -Naur webconfig-1.6/www/cgi/tpl/main.tpl webconfig-1.6-new//www/cgi/tpl/main.tpl
+--- webconfig-1.6/www/cgi/tpl/main.tpl	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//www/cgi/tpl/main.tpl	2014-12-30 11:16:13.000000000 +0200
+@@ -1,6 +1,5 @@
+ <html>
+ <head>
+-<meta content="text/html; charset=windows-1251" http-equiv="Content-Type" />
+ <title>{=str.title}</title>
+ <script language="javascript" type="text/javascript">
+ <!--
+diff -Naur webconfig-1.6/www/cgi/tpl/net_ids_log.tpl webconfig-1.6-new//www/cgi/tpl/net_ids_log.tpl
+--- webconfig-1.6/www/cgi/tpl/net_ids_log.tpl	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//www/cgi/tpl/net_ids_log.tpl	2014-12-30 11:16:13.000000000 +0200
+@@ -69,5 +69,5 @@
+ <input type="hidden" name="cmd" value="log"/>
+ <table border="0" width="100%" cellpadding="5" cellspacing="0">
+ <tr><td><textarea style="width: 100%;" id="log" rows="25" cols="80" readonly onscroll="set_as(this)">{readlog}</textarea></td></tr>
+-<tr><td><input type="checkbox" name="ldr" id="ldr"> {=str.net.8}</td></tr>
++<tr><td><input type="checkbox" name="ldr" id="ldr"> {=str.net.7}</td></tr>
+ </table>
+diff -Naur webconfig-1.6/www/cgi/tpl/net_router.tpl webconfig-1.6-new//www/cgi/tpl/net_router.tpl
+--- webconfig-1.6/www/cgi/tpl/net_router.tpl	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//www/cgi/tpl/net_router.tpl	1970-01-01 03:00:00.000000000 +0300
+@@ -1,360 +0,0 @@
+-<script language="javascript">
+-<!--
+-var sel_id = null;
+-var debugStore = 1;
+-
+-function _ge(id, parent) {
+-	if (parent == null) {
+-		return document.getElementById(id)
+-	} else {
+-		for (var c = 0; c < parent.childNodes.length; ++c) {
+-			var r = _ge(id, parent.childNodes[c]);
+-			if (r != null) {
+-				return r;
+-			}
+-			if (parent.childNodes[c].id == id) {
+-				return parent.childNodes[c];
+-			}
+-		}
+-	}
+-	return null;
+-};
+-
+-function set_data(cfg) {
+-	/*ge('router_enabled').checked = cfg.router_enabled;*/
+-}
+-
+-function breset_click() {
+-	/*set_data();*/
+-	load();
+-	return false;
+-}
+-
+-function set_click() {
+-	store();
+-	return false;
+-}
+-
+-function _ce(tag, id) {
+-
+-	var e = document.createElement(tag);
+-	e.id = id;
+-	return e;
+-};
+-
+-function _ci(id, type) {
+-	var e = document.createElement("input");
+-	e.id = id;
+-	e.type = type;
+-	return e;
+-};
+-
+-function clearStatus() {
+-	_ge("status").innerHTML = "";
+-}
+-
+-function setProtoValue(p) {
+-	var proto = _ge("pe_proto");
+-	_ge(p, proto).selected = true;
+-};
+-
+-function selector_onClick() {
+-	var row = this.parentNode.parentNode;
+-	var proto = _ge("pe_proto");
+-	setProtoValue(_ge("proto", row).innerHTML);
+-	_ge("pe_port").value = _ge("port", row).innerHTML;
+-	_ge("pe_hosts").value = _ge("hosts", row).innerHTML;
+-	_ge("pe_update").disabled = true;
+-	_ge("pe_delete").disabled = false;
+-	sel_id = row.id;
+-};
+-
+-function rowId(proto, port, filter, num) {
+-	return proto+"-"+port+"-"+filter+"-"+num;
+-}
+-
+-function prepareHosts(h) {
+-	var a = h.split(",");
+-	for (var i = 0; i < a.length; i++) a[i] = a[i].trim();
+-	return a.join(", ");
+-}
+-
+-function addFilter(proto, port, filter, hosts) {
+-	var tbody = _ge("pl");
+-	var row = _ce("tr", rowId(proto, port, filter, tbody.childElementCount));
+-	var selector;
+-	var sel_col = row.appendChild(_ce("td"));
+-	sel_col.width = "10%";
+-	with (selector = sel_col.appendChild(_ci("selector", "radio"))) { name = "selector"; onclick = selector_onClick; };
+-	with (row.appendChild(_ce("td", "proto"))) { witdh="15%"; innerHTML = proto; };
+-	with (row.appendChild(_ce("td", "port"))) { width="15%"; innerHTML = port; };
+-	with (row.appendChild(_ce("td"))) { width="15%"; appendChild(_ci("filter", "checkbox")).checked = filter == "on"; };
+-	with (row.appendChild(_ce("td", "hosts"))) { width="45%"; innerHTML = prepareHosts(hosts); };
+-	tbody.appendChild(row);
+-	selector.click();
+-};
+-
+-function validPort() {
+-	return /^[0-9]+$/.test(_ge("pe_port").value.trim());
+-}
+-
+-function validHosts() {
+-	if (_ge("pe_hosts").value == "") {
+-		return true;
+-	}
+-	var a = _ge("pe_hosts").value.split(",");
+-	for (var i = 0; i < a.length; i++) {
+-		if (!/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+|)$/.test(a[i].trim())) {
+-			return false;
+-		}
+-	}
+-	return true;
+-}
+-
+-function onAdd() {
+-	addFilter(_ge("pe_proto").value, _ge("pe_port").value.trim(), "on", prepareHosts(_ge("pe_hosts").value));
+-	listScrollDown();
+-	clearStatus();
+-};
+-
+-function onUpdate() {
+-	var row = _ge(sel_id);
+-	if (row	!== null) {
+-		_ge("proto", row).innerHTML = _ge("pe_proto").value;
+-		_ge("port", row).innerHTML = _ge("pe_port").value;
+-		_ge("hosts", row).innerHTML = prepareHosts(_ge("pe_hosts").value);
+-	}
+-	clearStatus();
+-};
+-
+-function onDelete() {
+-	var row = _ge(sel_id);
+-	var tbody = row.parentNode;
+-	if (row !== null) {
+-		var found = null;
+-		for (var s = 0; s < tbody.childNodes.length; ++s) {
+-			if (tbody.childNodes[s] == row) {
+-				if (s != (tbody.childNodes.length - 1)) {
+-					found = _ge("selector", tbody.childNodes[s + 1]);
+-					break;
+-				}
+-			}
+-		}
+-		row.parentNode.removeChild(row);
+-		if (found == null) {
+-			if (tbody.childNodes.length > 0) {
+-				found = _ge("selector", tbody.childNodes[tbody.childNodes.length - 1]);
+-			}
+-		}
+-		if (found != null) {
+-			found.click();
+-		}
+-		_ge("pe_delete").disabled = tbody.childNodes.length == 0;
+-	}
+-	clearStatus();
+-};
+-
+-function onChange(p) {
+-	if (validPort() && validHosts()) {
+-		_ge("pe_update").disabled = false;
+-		_ge("pe_add").disabled = false;
+-	} else {
+-		_ge("pe_update").disabled = true;
+-		_ge("pe_add").disabled = true;
+-	}
+-};
+-
+-function onChangePort(p) {
+-	var valid;
+-	valid = validPort();
+-	_ge("pe_update").disabled = !valid;
+-	_ge("pe_add").disabled = !valid;
+-};
+-
+-function onChangeHosts(p) {
+-	var valid;
+-	valid = validHosts();
+-	_ge("pe_update").disabled = !valid;
+-	_ge("pe_add").disabled = !valid;
+-};
+-
+-/* */
+-
+-function listScrollDown() {
+-	var scroll = _ge("pl_scroll");
+-	scroll.scrollTop = scroll.scrollHeight;
+-}
+-
+-/* */
+-
+-var statusDots;
+-var statusMsg;
+-var statusTmr = null;
+-
+-function updateProgress() {
+-	statusDots = statusDots + 1;
+-	var dots = new Array(statusDots+1).join(".");
+-	_ge("status").innerHTML = statusMsg + dots;
+-	if (statusDots == 6) statusDots = 0; 
+-	statusTmr = setTimeout(updateProgress, 1000);
+-
+-}
+-
+-function setProgress(msg) {
+-	statusMsg = msg + ": ";
+-	statusDots = 0;
+-	updateProgress();
+-}
+-
+-function cancelProgress() {
+-	if (statusTmr !== null) {
+-		clearTimeout(statusTmr);
+-		statusTmr = null;
+-	}
+-	clearStatus();
+-}
+-
+-/* */
+-
+-function store() {
+-	var cfg = { router_enabled: false, ports: [] } ;
+-	cfg.router_enabled = _ge("router_enabled").checked ? "1" : "0";
+-	tbody = _ge("pl");
+-	for (var p = 0; p < tbody.childNodes.length; ++p) {
+-		var row = tbody.childNodes[p];
+-		var hosts = _ge("hosts", row).innerHTML;
+-		if (hosts == "") {
+-			hosts = undefined;
+-		} else {
+-			hosts = hosts.split(",")
+-		}
+-		cfg.ports.push({ proto: _ge("proto", row).innerHTML, port: _ge("port", row).innerHTML, filter: _ge("filter", row).checked ? "on" : "off", hosts: hosts });
+-	}
+-	
+-	var req = new XMLHttpRequest();
+-	req.onreadystatechange = function() {
+-		if (req.readyState == 4) {
+-			cancelProgress();
+-			if (req.status == 200) {
+-				status = JSON.parse(req.responseText).status;
+-				if (status !== "ok") {
+-					_ge("status").innerHTML = status;
+-				} else {
+-					_ge("status").innerHTML = "{=str.net.13}";
+-					setTimeout(clearStatus, 20000);
+-				}
+-			} else {
+-				_ge("status").innerHTML = "{=str.net.11}: {=str.net.10}";
+-			}	
+-		}
+-	}
+-
+-	req.open("POST", "{=script}?p={=pg}&sp={=sp}&cmd=store&ts="+(Date.now() / 1000 | 0), true);
+-	req.setRequestHeader("Content-Type", "application/json");
+-	setProgress("{=str.net.11}");
+-	req.send(JSON.stringify(cfg));
+-};
+-
+-function load() {
+-	var req = new XMLHttpRequest();
+-
+-	_ge("pe_delete").disabled = true;
+-	
+-	req.onreadystatechange = function() {
+-		if (req.readyState == 4) {
+-			cancelProgress();
+-			if (req.status == 200) {
+-				var cfg = JSON.parse(req.responseText);
+-				if (typeof cfg.status !== undefined && cfg.status !== "ok") {
+-					_ge("status").innerHTML = cfg.status;
+-				} else {
+-					_ge("pl").innerHTML = "";
+-					sel_id = null;
+-					for (p in cfg.ports) {
+-						with (cfg.ports[p]) {
+-							addFilter(proto, port, filter, typeof cfg.ports[p].hosts == 'undefined' ? "" : cfg.ports[p].hosts.join(","));
+-						}
+-					}
+-					_ge("router_enabled").checked = (typeof cfg.router_enabled !== 'undefined' && cfg.router_enabled == "1") 
+-					listScrollDown();
+-					onChange();
+-				}
+-			} else {
+-				_ge("status").innerHTML = "{=str.net.12}: HTTP "+req.status;
+-			}
+-		}
+-	}
+-	req.open("GET", "{=script}?p={=pg}&sp={=sp}&cmd=load&ts="+(Date.now() / 1000 | 0), true);
+-	setProgress("{=str.net.12}");
+-	req.send();
+-};
+-
+-run = function() 
+-{
+-	load();
+-	ge('router_enabled').focus();
+-	/* set_data(router); */
+-}
+-
+-//-->
+-</script>
+-<table class="ft" cellpadding="5" cellspacing="5">
+-		<tbody id="dset">
+-		
+-                <tr><td width="38%">{=str.net.1}</td>
+-                        <td><input type="checkbox" id="router_enabled" name="router_enabled"/></td></tr>
+-		</tbody>
+-</table>
+-<table class="ft" cellpadding="5" cellspacing="5">
+-	<tbody>
+-		<tr>
+-			<td>
+-				{=str.net.9}<br>
+-				<table frame="border" width="100%">
+-					<thead>
+-						<th width="9%"></th>
+-						<th width="15%">{=str.net.2}</th>
+-						<th width="15%">{=str.net.3}</th>
+-						<th width="15%">{=str.net.4}</th>
+-						<th width="45%">{=str.net.5}</th>
+-					</thead>
+-					<tbody>
+-						<tr>
+-							<td colspan="5">
+-								<div style="overflow-x: hidden; overflow-y: scroll; height: 100px;" id="pl_scroll">
+-									<table rules="all" frame="border" width="100%">
+-										<tbody id="pl"></tbody>
+-									</table>
+-								</div>
+-							</td>
+-						</tr>
+-					</tbody>
+-				</table>
+-			</td>
+-		</tr>
+-	</tbody>
+-</table>
+-<table class="ft" cellpadding="5" cellspacing="5">
+-	<tbody>
+-		<tr>
+-			<td>
+-				<table id="pe" frame="none" width="100%">
+-					<tr>
+-						<td></td>
+-						<td>{=str.net.3}</td>
+-						<td>{=str.net.5}</td>
+-					</tr>
+-					<tr>
+-						<td><select id="pe_proto" onchange="onChange(this)"><option id="tcp">tcp</option><option id="udp">udp</option><option id="all">all</option></select></td>
+-						<td><input id="pe_port" type="text" oninput="onChangePort(this)"></input></td>
+-						<td><input id="pe_hosts" type="text" oninput="onChangeHosts(this)"></input></td>
+-						<td><input id="pe_add" type="submit" value="{=str.net.6}" onclick="onAdd(); return false;" disabled="true"/></td>
+-						<td><input id="pe_update" type="submit" value="{=str.net.7}" onclick="onUpdate(); return false;" disabled="true"/></td>
+-						<td><input id="pe_delete" type="submit" value="{=str.net.8}" onclick="onDelete(); return false;" disabled="true"/></td>
+-					</tr>
+-
+-				</table>
+-			</td>
+-		</tr>
+-	</tbody>
+-</table>
+diff -Naur webconfig-1.6/www/cgi/tpl/net.tpl webconfig-1.6-new//www/cgi/tpl/net.tpl
+--- webconfig-1.6/www/cgi/tpl/net.tpl	2015-01-28 16:35:45.000000000 +0200
++++ webconfig-1.6-new//www/cgi/tpl/net.tpl	2014-12-30 11:16:13.000000000 +0200
+@@ -1,6 +1,5 @@
+ {?sp=main:.net_form_main.tpl}
+ {?sp=:.net_form_main.tpl}
+-{?sp=router:.net_router.tpl}
+ {?sp=gprs:.net_ppp.tpl}
+ {?sp=vpn:.net_ppp.tpl}
+ {?sp=ddns:.net_ddns.tpl}

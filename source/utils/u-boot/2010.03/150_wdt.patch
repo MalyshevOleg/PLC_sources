@@ -1,0 +1,11 @@
+diff -uNr u-boot-2010.03/include/configs/owen_plc240.h u-boot-2010.03_2/include/configs/owen_plc240.h
+--- u-boot-2010.03/include/configs/owen_plc240.h	2013-12-26 16:00:26.827103832 +0400
++++ u-boot-2010.03_2/include/configs/owen_plc240.h	2013-12-27 14:13:31.327127638 +0400
+@@ -328,6 +328,7 @@
+ #define CONFIG_SYS_HUSH_PARSER
+ #define CONFIG_SYS_PROMPT_HUSH_PS2	"> "
+ #define CONFIG_ENV_OVERWRITE	1
++#define CONFIG_CMD_AT91SAM9X_WDT_DISABLE 1
+ 
+ #define CONFIG_CMD_SETEXPR
+ 

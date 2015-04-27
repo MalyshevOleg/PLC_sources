@@ -1,0 +1,9 @@
+/dev/snd	d	775	0	0	-	-	-	-	-
+
+/dev/fb		c	660	0	44	29	0	0	32	2
+/dev/snd/controlC0	c	644	0	0	116	0	-	-	-
+/dev/snd/hwC0D0	c	644	0	0	116	4	-	-	-
+/dev/snd/pcmC0D0p	c	644	0	0	116	16	-	-	-
+/dev/snd/pcmC0D0c	c	644	0	0	116	24	-	-	-
+/dev/snd/seq	c	644	0	0	116	1	-	-	-
+/dev/snd/timer	c	644	0	0	116	33	-	-	-

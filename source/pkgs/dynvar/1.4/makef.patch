@@ -1,0 +1,158 @@
+--- a/Makefile	2011-06-21 20:54:31.000000000 +0300
++++ b/Makefile	2011-06-21 20:42:20.000000000 +0300
+@@ -1,8 +1,55 @@
++CROSS_COMPILE=
++CC = $(CROSS_COMPILE)gcc
++STRIP = $(CROSS_COMPILE)strip
+ 
+-all: docs
++AM_MAKEFLAGS = CROSS_COMPILE=$(CROSS_COMPILE)
++
++SUBDIRS = lib subagent test
++
++RECURSIVE_TARGETS = all-recursive install-recursive clean-recursive
++
++all: Makefile
++	$(MAKE) $(AM_MAKEFLAGS) all-recursive
++
++$(RECURSIVE_TARGETS):
++	@failcom='exit 1'; \
++	for f in x $$MAKEFLAGS; do \
++	  case $$f in \
++	    *=* | --[!k]*);; \
++	    *k*) failcom='fail=yes';; \
++	  esac; \
++	done; \
++	dot_seen=no; \
++	target=`echo $@ | sed s/-recursive//`; \
++	list='$(SUBDIRS)'; for subdir in $$list; do \
++	  echo "Making $$target in $$subdir"; \
++	  if test "$$subdir" = "."; then \
++	    dot_seen=yes; \
++	    local_target="$$target-am"; \
++	  else \
++	    local_target="$$target"; \
++	  fi; \
++	  (cd $$subdir && $(MAKE) $(AM_MAKEFLAGS) $$local_target) \
++	  || eval $$failcom; \
++	done; \
++	if test "$$dot_seen" = "no"; then \
++	  $(MAKE) $(AM_MAKEFLAGS) "$$target-am" || exit 1; \
++	fi; test -z "$$fail"
++
++all-am: Makefile
++
++install: install-recursive
++install-am: all-am
++	install -d $(DESTDIR)/etc/snmp
++	install target/userfs/etc/rc.snmpd $(DESTDIR)/etc
++	install target/userfs/etc/snmp/* $(DESTDIR)/etc/snmp
+ 
+ docs:
+ 	doxygen doxygen.conf
+ 
+-clean:
++clean-am:
+ 	rm -rf docs
++
++clean:
++	$(MAKE) $(AM_MAKEFLAGS) clean-recursive
++	rm -f test/version.h
+--- a/lib/Makefile	2011-06-30 16:02:44.000000000 +0300
++++ b/lib/Makefile	2011-06-30 19:04:31.000000000 +0300
+@@ -1,10 +1,7 @@
+ TARGET=libsnmpdv.so
+ 
+-ifdef ARM
+-PATH=/home/alex/owen/buildsys/cross/bin:$PATH
+-CC=arm-unknown-linux-gnueabi-gcc
+-else
+-endif
++CC=$(CROSS_COMPILE)gcc
++STRIP=$(CROSS_COMPILE)strip
+ 
+ CFLAGS=-O2 -fPIC -I../subagent -Wall -DDEBUG
+ LDFLAGS=-fPIC -shared
+@@ -16,7 +13,11 @@
+ 
+ $(TARGET): $(OBJS)
+ 	$(CC) $(LDFLAGS) $^ -o $@
+-#	$(STRIP)
++	$(STRIP) $@
++
++install: $(TARGET)
++	install -d $(DESTDIR)/lib/
++	install $(TARGET) $(DESTDIR)/lib/
+ 
+ clean:
+ 	rm -f $(OBJS) $(TARGET)
+--- a/subagent/Makefile	2011-06-30 18:52:30.000000000 +0300
++++ b/subagent/Makefile	2011-06-30 18:50:14.000000000 +0300
+@@ -1,17 +1,9 @@
+ 
+-ifdef ARM
+-PATH=/home/alex/owen/buildsys/cross/bin:$PATH
+-CFLAGS=-I. -I/home/alex/owen/tmp/snmp/net-snmp-5.6.1_target/include 
+-CFLAGS+=-fno-strict-aliasing -g -O2 -Ulinux -Dlinux=linux -Wall -DDEBUG
+-BUILDAGENTLIBS=-L/home/alex/owen/tmp/snmp/net-snmp-5.6.1_target/agent/.libs 
+-BUILDAGENTLIBS+=-L/home/alex/owen/tmp/snmp/net-snmp-5.6.1_target/snmplib/.libs
+-BUILDAGENTLIBS+=-lnetsnmpagent -lnetsnmpmibs -lnetsnmp
+-LDFLAGS=-lpthread
+-CC=arm-unknown-linux-gnueabi-gcc
+-else
++CC=$(CROSS_COMPILE)gcc
++STRIP=$(CROSS_COMPILE)strip
++
+ CFLAGS=-I. `net-snmp-config --cflags` -Wall -DDEBUG
+-BUILDAGENTLIBS=`net-snmp-config --agent-libs`
+-endif
++BUILDAGENTLIBS=`net-snmp-config --agent-libs` -lpthread
+ 
+ TARGET=snmpdv_sa
+ 
+@@ -21,9 +13,16 @@
+ 
+ OBJS=$(SRCS:.c=.o)
+ 
++all: $(TARGET)
++
+ $(TARGET): $(OBJS)
+ 	$(CC) $(BUILDAGENTLIBS) $(LDFLAGS) -o $(TARGET) $(OBJS) 
+-	
++	$(STRIP) $@
++
++install: $(TARGET)
++	install -d $(DESTDIR)/sbin/
++	install $(TARGET) $(DESTDIR)/sbin/
++
+ clean:
+ 	rm -f *.o
+ 	rm -f $(TARGET)
+--- a/test/Makefile	2011-06-30 16:02:44.000000000 +0300
++++ b/test/Makefile	2011-06-30 19:06:56.000000000 +0300
+@@ -3,10 +3,9 @@
+ 
+ TARGET=snmpdv_test
+ 
+-ifdef ARM
+-CC=/home/alex/owen/buildsys/cross/bin/arm-unknown-linux-gnueabi-gcc
+-else
+-endif
++CC=$(CROSS_COMPILE)gcc
++STRIP=$(CROSS_COMPILE)strip
++
+ CFLAGS=-O2 -I../lib -Wall -DDEBUG
+ LDFLAGS=-L../lib -lsnmpdv
+ 
+@@ -17,6 +16,11 @@
+ 
+ $(TARGET): version.h $(OBJS) 
+ 	$(CC) $(LDFLAGS) $^ -o $@
++	$(STRIP) $@
++
++install: $(TARGET)
++	install -d $(DESTDIR)/bin/
++	install $(TARGET) $(DESTDIR)/bin/
+ 
+ version.h: $(SRC)
+ 	./version.sh $(APP_NAME) $(VERSION)

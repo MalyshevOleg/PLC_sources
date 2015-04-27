@@ -1,0 +1,484 @@
+#!/bin/sh
+
+. /etc/network/common.sh
+
+# default values, should be reassigned in $file_network_conf
+DHCP=0
+IPADDR="10.0.6.10"
+NETMASK="255.255.0.0"
+GWADDR="10.0.1.1"
+
+. $file_network_conf
+[ -n "$file_network_conf2" ] && . $file_network_conf2
+
+lo_start()
+{
+	echo "Setting up lo interface"
+	ifconfig lo up
+	route add -net 127.0.0.0 netmask 255.0.0.0 lo
+}
+
+lo_stop()
+{
+	echo "Shutting down lo interface"
+	ifconfig lo down
+}
+
+update_hostname()
+{
+	_hn=
+	if [ -f "$file_hostname" ]; then
+		set `cat $file_hostname` > /dev/null
+		_hn=$1
+	fi
+	
+	if [ "$HOST_NAME" != "${_hn}" ]; then
+		echo $HOST_NAME > $file_hostname
+		sync
+	fi
+	
+	hostname $HOST_NAME
+}
+
+set_hostname()
+{
+	echo "Setting up hostname '$HOST_NAME'"
+	update_hostname
+}
+
+# Param $1 - interface
+udhcp_start()
+{
+	attempts=2
+	# make the interface active, so udhcpc will be able to request HDCP server
+	ifconfig $1 up
+	usleep 1200000
+	while [ $attempts -gt 0 ]; do
+		udhcpc -i $1 -t 3 -T 1 -n -R -s $script_udhcpc
+		if [ $? -eq 0 ]; then
+			return 0
+		fi
+		attempts=$((attempts-1))
+		ifconfig $1 down
+		usleep 100000
+		ifconfig $1 up
+		usleep 1200000
+	done
+	return 1
+}
+
+# Param $1 - interface
+# retrun $? == 0 if specified dhcpc client is running
+check_udhcpc_is_running()
+{
+	ps | grep "udhcpc -i $1" | grep -q -v grep
+}
+
+# Param $1 - device
+udhcpc_stop()
+{
+	pid=`ps | grep "udhcpc -i $1" | grep -v grep | awk '{print $1;}'`
+	if [ "x$pid" != "x" ]; then
+		echo -n "Stopping udhcpc on $1 .. "
+		kill $pid 2> /dev/null
+		usleep 100000
+		_attempts=5
+		while [ ${_attempts} -gt 0 ]; do
+			check_udhcpc_is_running $1
+			if [ $? -ne 0 ]; then
+				echo "stopped"
+				break;
+			fi
+			usleep 100000
+			_attempts=$((_attempts - 1))
+		done
+		check_udhcpc_is_running $1
+		if [ $? -eq 0 ]; then
+			kill -9 $pid 2> /dev/null
+			echo "not stopped - killed"
+		fi
+	fi
+}
+
+# Params $1 - interface, $2 - hw addr
+update_eth_hw()
+{
+	# ifconfig does not display interface if it is not up,
+	# so grep will return non-0 if the interface is not found, i.e. is not up
+	ifconfig | grep -q $1
+	if [ $? -ne 0 ]; then
+		ifconfig $1 hw ether $2
+	else
+		ifconfig $1 down
+		usleep 100000
+		ifconfig $1 hw ether $2 up
+	fi
+}
+
+# Params:
+# 1 - interface
+# 2 - dhcp flag
+# 3 - ip addr
+# 4 - ip mask
+# 5 - hw addr
+eth_start()
+{
+	[ -n "$1" ] || return
+
+	_broadcast=`ipcalc -b $3 $4 | sed 's/BROADCAST=//'`
+
+	echo "Setting up $1 interafce"
+	# set up hw addr if specified
+	if [ -n "$5" ]; then
+		update_eth_hw $1 $5
+	fi
+	
+	_need_static=0
+	if [ "$2" == "1" ]; then
+		# dynamic (DHCP)
+		udhcp_start $1
+		if [ $? -ne 0 ]; then
+			echo "Failed to get IP dynamically, have to set default IP.."
+			_need_static=1
+		fi
+	fi
+
+	if [ "$2" != "1" -o ${_need_static} -eq 1 ]; then
+		# static
+		echo "Setting static IP address $3 on $1"
+		ifconfig $1 $3 netmask $4 broadcast ${_broadcast} up
+	fi
+}
+
+# Params - the same as for eth_start()
+eth_reload()
+{
+	[ -n "$1" ] || return
+
+	_broadcast=`ipcalc -b $3 $4 | sed 's/BROADCAST=//'`
+	_udhcpc=
+
+	echo "Updating $1 interafce"
+	# set up hw addr if specified
+	if [ -n "$5" ]; then
+		# check whether or not hw addr changed
+		_old_hw=`ifconfig $1 2> /dev/null | \
+				awk '/HWaddr/ { print(substr($0, index($0, "HWaddr")+7, 17)); }'`
+		if [ "${_old_hw}" != "$5" ]; then
+			update_eth_hw $1 $5
+		fi
+	fi
+
+	# check if DHCP already running
+	check_udhcpc_is_running $1
+	_udhcpc=$?
+	
+	_need_static=0
+	if [ "$2" == "1" ]; then
+		# dynamic (DHCP)
+		if [ ${_udhcpc} -ne 0 ]; then
+			udhcp_start $1
+			if [ $? -ne 0 ]; then
+				echo "Failed to get IP dynamically, have to set default IP.."
+				_need_static=1
+			fi
+		#else  nothing to do - already running
+		fi
+	else
+		if [ ${_udhcpc} -eq 0 ]; then
+			udhcpc_stop $1
+		fi
+	fi
+	
+	if [ "$2" != "1" -o ${_need_static} -eq 1 ]; then
+		# static
+		network_lock
+		clean_def_gateways $1
+		echo "Setting static IP address $3 on $1"
+		ifconfig $1 $3 netmask $4 broadcast ${_broadcast} up
+		network_unlock
+	fi
+}
+
+eth_stop()
+{
+	[ -n "$1" ] || return
+
+	echo "Shutting down $1 interface"
+
+	udhcpc_stop $1
+	
+	ifconfig $1 down
+}
+
+ppp_stop()
+{
+	#ifconfig | grep -q -E ppp[0-9]
+	ps |grep pppd | grep -q -v grep
+	if [ $? -eq 0 ]; then
+		echo "Shutting down ppp interfaces"
+		killall pppd
+	fi
+}
+
+gprs_auto_start()
+{
+	if [ -f $dir_ppp_profiles/${GPRS_AUTO}.gprs ]; then
+		echo "Auto starting $GPRS_AUTO GPRS connection"
+		# use 'updetach' to wait until connection is started or failed to start
+		pppd call ${GPRS_AUTO}.gprs updetach
+
+		if [ $? -ne 0 ]; then 
+			echo "Failed to start ${GPRS_AUTO}.gprs connection"
+			return
+		fi
+
+		echo "${GPRS_AUTO}.gprs started OK"
+	fi
+}
+
+vpn_auto_start()
+{
+	for name in $VPN_AUTO; do
+		if [ -f $dir_ppp_profiles/${name}.vpn ]; then
+			echo "Auto starting $name VPN connection"
+			# use 'updetach' to wait until connectionis started or failed to start
+			pppd call ${name}.vpn updetach
+			
+			if [ $? -ne 0 ]; then 
+				echo "Failed to start ${name}.vpn connection"
+			fi
+		fi
+	done
+}
+
+_ddns_start()
+{
+	if [ -f $file_ddns_conf ]; then
+		. $file_ddns_conf
+		file_ddns_sys_conf="$dir_ddns_conf/sys_${SYS_NAME}.conf"
+		echo "Using DDNS system $SYS_NAME ($file_ddns_sys_conf)" >> $file_log
+		if [ "$SYS_NAME" != "" -a -f $file_ddns_sys_conf ]; then
+			. $file_ddns_sys_conf
+			# check settings
+			if [ -z "$LOGIN" -o -z "$PASSWORD" -o -z "$DOMAIN" ]; then
+				echo "Failed to start inadyn: configuration $SYS_NAME is wrong"
+				return
+			fi
+			opt_account="-u $LOGIN -p $PASSWORD"
+			suff_hash=
+			if [ -n "$HASH" ]; then
+				suff_hash=",$HASH"
+			fi
+			opt_alias="-a ${HOST_NAME}.${DOMAIN}${suff_hash}"
+			opt_up="--update_period_sec $UPDATE_PERIOD_SEC"
+			opt_sys=
+			if [ -n "$SYSTEM" ]; then
+				opt_sys="--dyndns_system $SYSTEM"
+			fi
+			
+			opt_log_file=
+			if [ -n "$file_ddns_log" ]; then
+				opt_log_file="--log_file $file_ddns_log"
+			fi
+			
+			# start inadyn
+			#echo "/usr/sbin/inadyn $opt_sys $opt_alias $opt_up $opt_account --background" >> $file_log
+			/usr/sbin/inadyn $opt_sys $opt_alias $opt_up $opt_account --background $opt_log_file
+			echo "DynDNS updater (inadyn) started"
+		fi
+	fi
+}
+
+ddns_start()
+{
+	echo "DDNS is about to start" >> $file_log
+	(_ddns_start)
+}
+
+ddns_stop()
+{
+	echo "DDNS is about to stop" >> $file_log
+	check_ddns_is_running
+	if [ $? -eq 0 ]; then
+		echo "Shutting down ddns updater (inadyn)"
+		killall inadyn
+	fi
+}
+
+dnsmasq_start()
+{
+	local intf=""
+	echo -n >/tmp/dnsmasq.conf
+	if [ \( "${eth_iface##usb*}" = "" -o "$GPRS_ROUTER" = "1" \) -a "$DHCP" != "1" ]; then
+		echo "dhcp-range=$eth_iface,`whatmask $IPADDR $NETMASK | awk '/^First/ { print $7"," } /^Last/ { print $7 }' | tr -d '\n'`,12h" >>/tmp/dnsmasq.conf
+		intf="${intf:+$intf,}$eth_iface"
+	fi
+	if [ \( "${eth_iface2##usb*}" = "" -o "$GPRS_ROUTER" = "1" \) -a -n "$IPADDR2" -a -n "$NETMASK2" -a "$DHCP2" != "1" ]; then
+		echo "dhcp-range=$eth_iface2,`whatmask $IPADDR2 $NETMASK2 | awk '/^First/ { print $7"," } /^Last/ { print $7 }' | tr -d '\n'`,12h" >>/tmp/dnsmasq.conf
+		intf="${intf:+$intf,}$eth_iface2"
+	fi
+	if [ -n "$intf" ]; then
+		/usr/sbin/dnsmasq -C /etc/dnsmasq.conf
+	else
+		rm /tmp/dnsmasq.conf
+	fi
+}
+
+dnsmasq_stop()
+{
+	ps | grep [d]nsmasq >/dev/null && killall dnsmasq
+	rm -f /tmp/dnsmasq.conf
+}
+
+services_start()
+{
+	/etc/rc.dropbear start
+	ddns_start
+	dnsmasq_start
+	[ -x /usr/bin/net_watchdog.sh ] && /usr/bin/net_watchdog.sh -start &
+	[ -x /usr/bin/net_ids.sh ] && /usr/bin/net_ids.sh -start &
+}
+
+services_stop()
+{
+	[ -x /usr/bin/net_watchdog.sh ] && /usr/bin/net_watchdog.sh -stop
+	[ -x /usr/bin/net_ids.sh ] && /usr/bin/net_ids.sh -stop
+	dnsmasq_stop
+	ddns_stop
+	/etc/rc.dropbear stop
+}
+
+case "$1" in
+	start)
+		lo_start
+		set_hostname
+
+		eth_start "$eth_iface" "$DHCP" "$IPADDR" "$NETMASK" "$HWADDR"
+		eth_start "$eth_iface2" "$DHCP2" "$IPADDR2" "$NETMASK2" "$HWADDR2"
+
+		firewall start
+		
+		check_udhcpc_is_running $eth_iface
+		# if udhcpc is not running, configure manually: routing & resolver
+		if [ $? -ne 0 ]; then
+			echo "Adding default gw $GWADDR"
+			route add default gw $GWADDR dev $eth_iface
+			
+			update_dns $file_resolv_conf "" $DNS1 $DNS2
+		fi
+		
+		gprs_auto_start
+		vpn_auto_start
+		
+		services_start
+		;;
+
+	stop)
+		# stop everything, including possible INADYN and PPPs(GPRS+VPNs)
+		services_stop
+		ppp_stop
+		firewall stop
+		eth_stop "$eth_iface"
+		eth_stop "$eth_iface2"
+		lo_stop
+		;;
+	
+	restart)
+		$0 stop
+		usleep 100000
+		$0 start
+		;;
+		
+# startppp & stopppp - wbe-config helpers, usage:
+# rc.net startppp <callname>
+# rc.net stopppp <callname>
+	startppp)
+		cn=$2
+		if [ -f $dir_ppp_profiles/$cn ]; then
+			/usr/sbin/pppd call $cn &
+			pid=$!
+			echo $pid > $dir_runtime/${cn}.starting
+			echo "$0: PPP connection $cn started, starting pid: $pid" >> $file_log
+		else
+			echo "$0: Filed to start PPP connection $cn: profile not found" >> $file_log
+		fi
+		;;
+		
+	stopppp)
+		cn=$2
+		starting_file=$dir_runtime/${cn}.starting
+		if_file=$dir_runtime/${cn}.if
+		
+		if [ -f $starting_file -o -f $if_file ]; then
+			if [ -f $starting_file ]; then
+				pid=`cat $starting_file`
+				kill $pid 2>/dev/null
+				rm -f $starting_file
+				#echo "$0: Starting pid processed for: $cn" >> $file_log
+			fi
+
+			if [ -f $if_file ]; then
+				if_name=`cat $if_file`
+				pid=`cat /var/run/${if_name}.pid 2>/dev/null`
+				pid=$((pid+0))
+				if [ $pid -gt 0 ]; then
+					kill $pid 2>/dev/null
+					#echo "$0: pppd killed for: $cn/$if_name" >> $file_log
+				fi
+			fi
+			echo "$0: PPP connection $cn stopped" >> $file_log
+		else
+			echo "$0: Filed to stop PPP connection $cn: pids not found" >> $file_log
+		fi
+		;;
+
+	ddns)
+		case "$2" in
+			start)
+				ddns_start
+				;;
+			stop)
+				ddns_stop
+				;;
+			update|*)
+				ddns_stop
+				ddns_start
+				;;
+		esac
+		;;
+
+# NOTE: * - is used for backward compatibility with old webconf
+	reload|*)
+		# web-config may call this option to apply new settings
+		services_stop
+		update_hostname
+
+		eth_reload "$eth_iface" "$DHCP" "$IPADDR" "$NETMASK" "$HWADDR"
+		eth_reload "$eth_iface2" "$DHCP2" "$IPADDR2" "$NETMASK2" "$HWADDR2"
+
+		check_udhcpc_is_running $eth_iface
+		# if udhcpc is not running, configure manually: routing & resolver
+		if [ $? -ne 0 ]; then
+			network_lock
+			echo -n "Adding default gw $GWADDR "
+			if [ -f $file_ppp_flag ]; then
+				echo "to PPP saved gateways"
+				echo $GWADDR " " 0 " " $eth_iface > $file_ppp_save_gw
+
+				update_dns $file_ppp_save_dns "" $DNS1 $DNS2
+			else
+				echo "to system route table"
+				route add default gw $GWADDR dev $eth_iface
+			
+				update_dns $file_resolv_conf "" $DNS1 $DNS2
+			fi
+			network_unlock
+		fi
+
+		services_start
+		;;
+esac
+
+exit 0
+

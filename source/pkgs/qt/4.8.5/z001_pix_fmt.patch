@@ -1,0 +1,49 @@
+diff -uNr qt-everywhere-opensource-src-4.8.5/src/gui/embedded/qscreen_qws.cpp qt-everywhere-opensource-src-4.8.5_patched/src/gui/embedded/qscreen_qws.cpp
+--- qt-everywhere-opensource-src-4.8.5/src/gui/embedded/qscreen_qws.cpp	2014-06-17 09:40:08.585464508 +0400
++++ qt-everywhere-opensource-src-4.8.5_patched/src/gui/embedded/qscreen_qws.cpp	2014-07-29 17:17:55.368081513 +0400
+@@ -2237,7 +2237,13 @@
+ */
+ QScreen::QScreen(int display_id, ClassId classId)
+     : screencols(0), data(0), entries(0), entryp(0), lowest(0),
+-      w(0), lstep(0), h(0), d(1), pixeltype(NormalPixel), grayscale(false),
++      w(0), lstep(0), h(0), d(1), 
++#ifdef MACHAT91
++      pixeltype(BGRPixel),            
++#else
++      pixeltype(NormalPixel),
++#endif
++       grayscale(false),
+       dw(0), dh(0), size(0), mapsize(0), displayId(display_id),
+       physWidth(0), physHeight(0), d_ptr(new QScreenPrivate(this, classId))
+ {
+@@ -2246,7 +2252,13 @@
+ 
+ QScreen::QScreen(int display_id)
+     : screencols(0), data(0), entries(0), entryp(0), lowest(0),
+-      w(0), lstep(0), h(0), d(1), pixeltype(NormalPixel), grayscale(false),
++      w(0), lstep(0), h(0), d(1), 
++#ifdef MACHAT91
++      pixeltype(BGRPixel),
++#else
++      pixeltype(NormalPixel),
++#endif
++      grayscale(false),
+       dw(0), dh(0), size(0), mapsize(0), displayId(display_id),
+       physWidth(0), physHeight(0), d_ptr(new QScreenPrivate(this))
+ {
+diff -uNr qt-everywhere-opensource-src-4.8.5_orig/src/gui/painting/qdrawhelper_p.h qt-everywhere-opensource-src-4.8.5/src/gui/painting/qdrawhelper_p.h
+--- qt-everywhere-opensource-src-4.8.5_orig/src/gui/painting/qdrawhelper_p.h	2014-08-07 18:34:11.226474730 +0400
++++ qt-everywhere-opensource-src-4.8.5/src/gui/painting/qdrawhelper_p.h	2014-09-03 14:13:02.903766920 +0400
+@@ -962,9 +962,9 @@
+ public:
+     inline qbgr565(quint16 v)
+     {
+-        data = ((v & 0x001f) << 11) |
+-               (v & 0x07e0) |
+-               ((v & 0xf800) >> 11);
++        data = ( ( (v & 0x003f) << 10) ) | // раз Синий был 6 и стал 6
++               ( ( (v & 0x07C0) >> 1 ) ) |        // два Зеленый был 5 бит - стал 5 - сдвинем на один бит вправо
++               ( ( (v & 0xf800) >> 11) );  // три            // Красный был 5 и стал 5
+     }
+ 
+     inline bool operator==(const qbgr565 &v) const

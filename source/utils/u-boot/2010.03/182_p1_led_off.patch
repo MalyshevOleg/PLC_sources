@@ -1,0 +1,17 @@
+diff -uNr u-boot-2010.03-o/board/owen/spk2xx_var/board.c u-boot-2010.03/board/owen/spk2xx_var/board.c
+--- u-boot-2010.03-o/board/owen/spk2xx_var/board.c	2014-09-23 13:24:06.583959640 +0400
++++ u-boot-2010.03/board/owen/spk2xx_var/board.c	2014-09-23 13:46:50.996040035 +0400
+@@ -93,6 +93,13 @@
+ 		omap_set_gpio_direction(gpio_leds[i], 0);
+ 		omap_set_gpio_dataout(gpio_leds[i], 0);
+ 	}
++
++	// GPIO 95 = P1 LED =OFF = light
++	omap_mux_init_gpio(95, OMAP_PIN_OUTPUT);
++	omap_request_gpio(95);
++	omap_set_gpio_direction(95,0);
++	omap_set_gpio_dataout(95, 1);
++
+ 	
+ 	omap_set_gpio_dataout(65, 1);
+ 

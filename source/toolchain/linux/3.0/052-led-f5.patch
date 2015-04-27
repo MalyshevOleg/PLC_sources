@@ -1,0 +1,16 @@
+diff -uNr linux-3.0/arch/arm/mach-omap2/board-owen-spk2xx-var.c linux-3.0-led-new/arch/arm/mach-omap2/board-owen-spk2xx-var.c
+--- linux-3.0/arch/arm/mach-omap2/board-owen-spk2xx-var.c	2014-01-13 13:54:38.825358302 +0400
++++ linux-3.0-led-new/arch/arm/mach-omap2/board-owen-spk2xx-var.c	2014-01-13 13:43:49.827148770 +0400
+@@ -522,9 +522,11 @@
+ 	/* configure pins like for spi1 (by debugfs) */
+ 	OMAP3_MUX(SDMMC2_CLK, OMAP_MUX_MODE1 | OMAP_PIN_INPUT),	/* mcspi3_clk */
+ 	OMAP3_MUX(SDMMC2_CMD, OMAP_MUX_MODE1 | OMAP_PIN_INPUT),	/* mcspi3_simo */
+-	OMAP3_MUX(SDMMC2_DAT0, OMAP_MUX_MODE1 | OMAP_PIN_INPUT),	/* mcspi3_somi */
++	OMAP3_MUX(SDMMC2_DAT0, OMAP_MUX_MODE1 | OMAP_PIN_INPUT),	/* _somi */
++	OMAP3_MUX(SDMMC2_DAT1, OMAP_MUX_MODE4 | OMAP_PIN_OUTPUT),	/* sv5 */
+ 	OMAP3_MUX(SDMMC2_DAT2, OMAP_MUX_MODE1 | OMAP_PIN_INPUT_PULLDOWN),	/* mcspi3_cs1 */
+ 	OMAP3_MUX(SDMMC2_DAT3, OMAP_MUX_MODE1 | OMAP_PIN_INPUT_PULLDOWN),	/* mcspi3_cs0 */
++	OMAP3_MUX(SDMMC2_DAT4, OMAP_MUX_MODE4 | OMAP_PIN_OUTPUT),	/* sv6 */
+ 
+ 	/* UART4 RX, TX, RTS, CTS */
+ 	OMAP3_MUX(CCDC_WEN, OMAP_MUX_MODE2 | OMAP_PIN_INPUT),	/* uart4_rx, pin 57 */

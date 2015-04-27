@@ -1,0 +1,36 @@
+--- a/Makefile	2010-10-21 20:16:36.000000000 +0300
++++ b/Makefile	2010-10-21 20:40:42.000000000 +0300
+@@ -1,27 +1,25 @@
+ CROSSPATH=/opt/owen/cross/bin/
+ CROSS_PREFIX=arm-unknown-linux-uclibc-
++SDIR=./
+ 
+ CC =		$(CROSSPATH)$(CROSS_PREFIX)gcc
+ CCOPT =		-O2
+ DEFS =		-DHAVE_FCNTL_H=1 -DHAVE_GRP_H=1 -DHAVE_MEMORY_H=1 -DHAVE_PATHS_H=1 -DHAVE_POLL_H=1 -DHAVE_SYS_POLL_H=1 -DTIME_WITH_SYS_TIME=1 -DHAVE_DIRENT_H=1 -DHAVE_LIBCRYPT=1 -DHAVE_STRERROR=1 -DHAVE_WAITPID=1 -DHAVE_VSNPRINTF=1 -DHAVE_DAEMON=1 -DHAVE_SETSID=1 -DHAVE_GETADDRINFO=1 -DHAVE_GETNAMEINFO=1 -DHAVE_GAI_STRERROR=1 -DHAVE_SIGSET=1 -DHAVE_ATOLL=1 -DHAVE_UNISTD_H=1 -DHAVE_GETPAGESIZE=1 -DHAVE_SELECT=1 -DHAVE_POLL=1 -DHAVE_INT64T=1 
+-INCLS =		-I..
++INCLS =
+ CFLAGS =	$(CCOPT) $(DEFS) $(INCLS)
+-LDFLAGS =	-static
++#LDFLAGS =	-static
+ LIBS =		-lcrypt
+ NETLIBS =	
+ 
+ CLEANFILES =	*.o setup.cgi
+-
++VPATH=$(SDIR)
+ 
+ all: clean setup.cgi
+ 
+ 
+ setup.cgi: script1.o cgic.o
+ 	$(CC) $(LDFLAGS) $(STATICFLAG) script1.o cgic.o $(LIBS) -o setup.cgi
+-
+-.c.o:
+-	@rm -f $@
+-	$(CC) $(CFLAGS) -c $*.c
++	$(CROSSPATH)$(CROSS_PREFIX)strip --strip-all setup.cgi
+ 
+ clean:
+ 	@rm -f *.o setup.cgi
+\ No newline at end of file

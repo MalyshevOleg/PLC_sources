@@ -1,0 +1,211 @@
+diff -Nru a/configure b/configure
+--- a/configure	2010-04-20 07:15:19.000000000 +0300
++++ b/configure	2010-06-21 19:43:58.000000000 +0300
+@@ -23,10 +23,11 @@
+ fi
+ 
+ STATICLIB=libz.a
+-VER=`sed -n -e '/VERSION "/s/.*"\(.*\)".*/\1/p' < zlib.h`
+-VER3=`sed -n -e '/VERSION "/s/.*"\([0-9]*\\.[0-9]*\\.[0-9]*\).*/\1/p' < zlib.h`
+-VER2=`sed -n -e '/VERSION "/s/.*"\([0-9]*\\.[0-9]*\)\\..*/\1/p' < zlib.h`
+-VER1=`sed -n -e '/VERSION "/s/.*"\([0-9]*\)\\..*/\1/p' < zlib.h`
++srcdir=${srcdir-.}
++VER=`sed -n -e '/VERSION "/s/.*"\(.*\)".*/\1/p' < $srcdir/zlib.h`
++VER3=`sed -n -e '/VERSION "/s/.*"\([0-9]*\\.[0-9]*\\.[0-9]*\).*/\1/p' < $srcdir/zlib.h`
++VER2=`sed -n -e '/VERSION "/s/.*"\([0-9]*\\.[0-9]*\)\\..*/\1/p' < $srcdir/zlib.h`
++VER1=`sed -n -e '/VERSION "/s/.*"\([0-9]*\)\\..*/\1/p' < $srcdir/zlib.h`
+ if "${CROSS_PREFIX}ar" --version >/dev/null 2>/dev/null || test $? -lt 126; then
+     AR=${AR-"${CROSS_PREFIX}ar"}
+     test -n "${CROSS_PREFIX}" && echo Using ${AR} | tee -a configure.log
+@@ -173,7 +174,7 @@
+   fi
+   case "$uname" in
+   Linux* | linux* | GNU | GNU/* | solaris*)
+-        LDSHARED=${LDSHARED-"$cc -shared -Wl,-soname,libz.so.1,--version-script,zlib.map"} ;;
++        LDSHARED=${LDSHARED-"$cc -shared -Wl,-soname,libz.so.1,--version-script,$srcdir/zlib.map"} ;;
+   *BSD | *bsd* | DragonFly)
+         LDSHARED=${LDSHARED-"$cc -shared -Wl,-soname,libz.so.1,--version-script,zlib.map"}
+         LDCONFIG="ldconfig -m" ;;
+@@ -367,7 +368,7 @@
+   fi
+ fi
+ 
+-cp -p zconf.h.in zconf.h
++cp -p $srcdir/zconf.h.in zconf.h
+ 
+ echo >> configure.log
+ 
+@@ -376,7 +377,7 @@
+ int main() { return 0; }
+ EOF
+ if try $CC -c $CFLAGS $test.c; then
+-  sed < zconf.h "/^#ifdef HAVE_UNISTD_H.* may be/s/def HAVE_UNISTD_H\(.*\) may be/ 1\1 was/" > zconf.temp.h
++  sed < $srcdir/zconf.h "/^#ifdef HAVE_UNISTD_H.* may be/s/def HAVE_UNISTD_H\(.*\) may be/ 1\1 was/" > zconf.temp.h
+   mv zconf.temp.h zconf.h
+   echo "Checking for unistd.h... Yes." | tee -a configure.log
+ else
+@@ -666,7 +667,7 @@
+ echo >> configure.log
+ 
+ # udpate Makefile
+-sed < Makefile.in "
++sed < $srcdir/Makefile.in "
+ /^CC *=/s#=.*#=$CC#
+ /^CFLAGS *=/s#=.*#=$CFLAGS#
+ /^SFLAGS *=/s#=.*#=$SFLAGS#
+@@ -689,13 +690,14 @@
+ /^sharedlibdir *=/s#=.*#=$sharedlibdir#
+ /^includedir *=/s#=.*#=$includedir#
+ /^mandir *=/s#=.*#=$mandir#
++/^srcdir *=/s#=.*#=$srcdir#
+ /^OBJC *=/s#=.*#= $OBJC#
+ /^PIC_OBJC *=/s#=.*#= $PIC_OBJC#
+ /^all: */s#:.*#: $ALL#
+ /^test: */s#:.*#: $TEST#
+ " > Makefile
+ 
+-sed < zlib.pc.in "
++sed < $srcdir/zlib.pc.in "
+ /^CC *=/s#=.*#=$CC#
+ /^CFLAGS *=/s#=.*#=$CFLAGS#
+ /^CPP *=/s#=.*#=$CPP#
+diff -Nru a/Makefile.in b/Makefile.in
+--- a/Makefile.in	2010-04-20 07:12:21.000000000 +0300
++++ b/Makefile.in	2010-06-21 20:11:01.000000000 +0300
+@@ -54,6 +54,7 @@
+ man3dir = ${mandir}/man3
+ pkgconfigdir = ${libdir}/pkgconfig
+ tempfile := $(shell mktemp -u __XXXXXX)
++srcdir = .
+ 
+ OBJZ = adler32.o crc32.o deflate.o infback.o inffast.o inflate.o inftrees.o trees.o zutil.o
+ OBJG = compress.o uncompr.o gzclose.o gzlib.o gzread.o gzwrite.o
+@@ -126,33 +127,33 @@
+ 	$(AR) $(ARFLAGS) $@ $(OBJS)
+ 	-@ ($(RANLIB) $@ || true) >/dev/null 2>&1
+ 
+-match.o: match.S
+-	$(CPP) match.S > _match.s
++match.o: $(srcdir)/match.S
++	$(CPP) $(srcdir)/match.S > _match.s
+ 	$(CC) -c _match.s
+ 	mv _match.o match.o
+ 	rm -f _match.s
+ 
+-match.lo: match.S
+-	$(CPP) match.S > _match.s
++match.lo: $(srcdir)/match.S
++	$(CPP) $(srcdir)/match.S > _match.s
+ 	$(CC) -c -fPIC _match.s
+ 	mv _match.o match.lo
+ 	rm -f _match.s
+ 
+-example.o: test/example.c zlib.h zconf.h
+-	$(CC) $(CFLAGS) -I. -c -o $@ test/example.c
++example.o: $(srcdir)/test/example.c $(srcdir)/zlib.h zconf.h
++	$(CC) $(CFLAGS) -I. -I$(srcdir) -c -o $@ $(srcdir)/test/example.c
+ 
+-minigzip.o: test/minigzip.c zlib.h zconf.h
+-	$(CC) $(CFLAGS) -I. -c -o $@ test/minigzip.c
++minigzip.o: $(srcdir)/test/minigzip.c $(srcdir)/zlib.h zconf.h
++	$(CC) $(CFLAGS) -I. -I$(srcdir) -c -o $@ $(srcdir)/test/minigzip.c
+ 
+-example64.o: test/example.c zlib.h zconf.h
+-	$(CC) $(CFLAGS) -I. -D_FILE_OFFSET_BITS=64 -c -o $@ test/example.c
++example64.o: $(srcdir)/test/example.c $(srcdir)/zlib.h zconf.h
++	$(CC) $(CFLAGS) -I. -I$(srcdir) -D_FILE_OFFSET_BITS=64 -c -o $@ $(srcdir)/test/example.c
+ 
+-minigzip64.o: test/minigzip.c zlib.h zconf.h
+-	$(CC) $(CFLAGS) -I. -D_FILE_OFFSET_BITS=64 -c -o $@ test/minigzip.c
++minigzip64.o: $(srcdir)/test/minigzip.c $(srcdir)/zlib.h zconf.h
++	$(CC) $(CFLAGS) -I. -I$(srcdir) -D_FILE_OFFSET_BITS=64 -c -o $@ $(srcdir)/test/minigzip.c
+ 
+ .SUFFIXES: .lo
+ 
+-.c.lo:
++%.lo: $(srcdir)/%.c
+ 	-@mkdir objs 2>/dev/null || test -d objs
+ 	$(CC) $(SFLAGS) -DPIC -c -o objs/$*.o $<
+ 	-@mv objs/$*.o $@
+@@ -201,8 +202,9 @@
+ 	  ln -s $(SHAREDLIBV) $(DESTDIR)$(sharedlibdir)/$(SHAREDLIBM); \
+ 	  ($(LDCONFIG) || true)  >/dev/null 2>&1; \
+ 	fi
+-	cp zlib.3 $(DESTDIR)$(man3dir)
++	cp $(srcdir)/zlib.3 $(DESTDIR)$(man3dir)
+ 	chmod 644 $(DESTDIR)$(man3dir)/zlib.3
++	gzip -9f $(DESTDIR)$(man3dir)/zlib.3
+ 	cp zlib.pc $(DESTDIR)$(pkgconfigdir)
+ 	chmod 644 $(DESTDIR)$(pkgconfigdir)/zlib.pc
+ # The ranlib in install is needed on NeXTSTEP which checks file times
+@@ -210,9 +212,20 @@
+ 
+ install: install-libs
+ 	-@if [ ! -d $(DESTDIR)$(includedir)   ]; then mkdir -p $(DESTDIR)$(includedir); fi
+-	cp zlib.h zconf.h $(DESTDIR)$(includedir)
++	cp $(srcdir)/zlib.h $(srcdir)/zconf.h $(DESTDIR)$(includedir)
+ 	chmod 644 $(DESTDIR)$(includedir)/zlib.h $(DESTDIR)$(includedir)/zconf.h
+ 
++install-runtime: $(SHAREDLIBV)
++	-@if [ ! -d $(DESTDIR)$(libdir)       ]; then mkdir -p $(DESTDIR)$(libdir); fi
++	cp $(SHAREDLIBV) $(DESTDIR)$(sharedlibdir)
++	-@cd $(DESTDIR)$(sharedlibdir); if test "$(SHAREDLIBV)" -a -f $(SHAREDLIBV); then \
++	  chmod 755 $(SHAREDLIBV); \
++	  rm -f $(SHAREDLIB) $(SHAREDLIBM); \
++	  ln -s $(SHAREDLIBV) $(SHAREDLIB); \
++	  ln -s $(SHAREDLIBV) $(SHAREDLIBM); \
++	  ($(LDCONFIG) || true)  >/dev/null 2>&1; \
++	fi
++
+ uninstall:
+ 	cd $(DESTDIR)$(includedir); rm -f zlib.h zconf.h
+ 	cd $(DESTDIR)$(libdir); rm -f libz.a; \
+@@ -262,24 +275,29 @@
+ depend:
+ 	makedepend -- $(CFLAGS) -- *.[ch]
+ 
++%.o: $(srcdir)/%.c
++	$(COMPILE.c) $(OUTPUT_OPTION) $<
++
++sdir=$(foreach file,$1,$(addprefix $(srcdir)/,$(file)))
++
+ # DO NOT DELETE THIS LINE -- make depend depends on it.
+ 
+-adler32.o zutil.o: zutil.h zlib.h zconf.h
+-gzclose.o gzlib.o gzread.o gzwrite.o: zlib.h zconf.h gzguts.h
+-compress.o example.o minigzip.o uncompr.o: zlib.h zconf.h
+-crc32.o: zutil.h zlib.h zconf.h crc32.h
+-deflate.o: deflate.h zutil.h zlib.h zconf.h
+-infback.o inflate.o: zutil.h zlib.h zconf.h inftrees.h inflate.h inffast.h inffixed.h
+-inffast.o: zutil.h zlib.h zconf.h inftrees.h inflate.h inffast.h
+-inftrees.o: zutil.h zlib.h zconf.h inftrees.h
+-trees.o: deflate.h zutil.h zlib.h zconf.h trees.h
+-
+-adler32.lo zutil.lo: zutil.h zlib.h zconf.h
+-gzclose.lo gzlib.lo gzread.lo gzwrite.lo: zlib.h zconf.h gzguts.h
+-compress.lo example.lo minigzip.lo uncompr.lo: zlib.h zconf.h
+-crc32.lo: zutil.h zlib.h zconf.h crc32.h
+-deflate.lo: deflate.h zutil.h zlib.h zconf.h
+-infback.lo inflate.lo: zutil.h zlib.h zconf.h inftrees.h inflate.h inffast.h inffixed.h
+-inffast.lo: zutil.h zlib.h zconf.h inftrees.h inflate.h inffast.h
+-inftrees.lo: zutil.h zlib.h zconf.h inftrees.h
+-trees.lo: deflate.h zutil.h zlib.h zconf.h trees.h
++adler32.o zutil.o: $(call sdir,zutil.h zlib.h zconf.h)
++gzclose.o gzlib.o gzread.o gzwrite.o: $(call sdir,zlib.h zconf.h gzguts.h)
++compress.o example.o minigzip.o uncompr.o: $(call sdir,zlib.h zconf.h)
++crc32.o: $(call sdir,zutil.h zlib.h zconf.h crc32.h)
++deflate.o: $(call sdir,deflate.h zutil.h zlib.h zconf.h)
++infback.o inflate.o: $(call sdir,zutil.h zlib.h zconf.h inftrees.h inflate.h inffast.h inffixed.h)
++inffast.o: $(call sdir,zutil.h zlib.h zconf.h inftrees.h inflate.h inffast.h)
++inftrees.o: $(call sdir,zutil.h zlib.h zconf.h inftrees.h)
++trees.o: $(call sdir,deflate.h zutil.h zlib.h zconf.h trees.h)
++
++adler32.lo zutil.lo: $(call sdir,zutil.h zlib.h zconf.h)
++gzclose.lo gzlib.lo gzread.lo gzwrite.lo: $(call sdir,zlib.h zconf.h gzguts.h)
++compress.lo example.lo minigzip.lo uncompr.lo: $(call sdir,zlib.h zconf.h)
++crc32.lo: $(call sdir,zutil.h zlib.h zconf.h crc32.h)
++deflate.lo: $(call sdir,deflate.h zutil.h zlib.h zconf.h)
++infback.lo inflate.lo: $(call sdir,zutil.h zlib.h zconf.h inftrees.h inflate.h inffast.h inffixed.h)
++inffast.lo: $(call sdir,zutil.h zlib.h zconf.h inftrees.h inflate.h inffast.h)
++inftrees.lo: $(call sdir,zutil.h zlib.h zconf.h inftrees.h)
++trees.lo: $(call sdir,deflate.h zutil.h zlib.h zconf.h trees.h)

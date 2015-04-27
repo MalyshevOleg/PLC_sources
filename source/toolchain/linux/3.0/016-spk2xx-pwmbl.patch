@@ -1,0 +1,108 @@
+diff -uNr old/arch/arm/configs/owen_spk207_can_var_defconfig new/arch/arm/configs/owen_spk207_can_var_defconfig
+--- old/arch/arm/configs/owen_spk207_can_var_defconfig	2014-01-08 11:04:05.028208700 +0400
++++ new/arch/arm/configs/owen_spk207_can_var_defconfig	2014-01-08 11:07:14.521443000 +0400
+@@ -3,6 +3,7 @@
+ # Linux/arm 3.0.18 Kernel Configuration
+ #
+ CONFIG_ARM=y
++CONFIG_HAVE_PWM=y
+ CONFIG_SYS_SUPPORTS_APM_EMULATION=y
+ CONFIG_HAVE_SCHED_CLOCK=y
+ CONFIG_GENERIC_GPIO=y
+@@ -1288,6 +1289,7 @@
+ # CONFIG_LCD_LD9040 is not set
+ CONFIG_BACKLIGHT_CLASS_DEVICE=y
+ CONFIG_BACKLIGHT_GENERIC=m
++CONFIG_BACKLIGHT_PWM=y
+ # CONFIG_BACKLIGHT_ADP8860 is not set
+ # CONFIG_BACKLIGHT_ADP8870 is not set
+ 
+@@ -1540,6 +1542,7 @@
+ # CONFIG_LEDS_LP5523 is not set
+ # CONFIG_LEDS_PCA955X is not set
+ # CONFIG_LEDS_DAC124S085 is not set
++# CONFIG_LEDS_PWM is not set
+ # CONFIG_LEDS_REGULATOR is not set
+ # CONFIG_LEDS_BD2802 is not set
+ # CONFIG_LEDS_LT3593 is not set
+diff -uNr old/arch/arm/configs/owen_spk207_var_defconfig new/arch/arm/configs/owen_spk207_var_defconfig
+--- old/arch/arm/configs/owen_spk207_var_defconfig	2014-01-08 10:58:43.293981500 +0400
++++ new/arch/arm/configs/owen_spk207_var_defconfig	2014-01-08 11:07:14.525443100 +0400
+@@ -3,6 +3,7 @@
+ # Linux/arm 3.0.18 Kernel Configuration
+ #
+ CONFIG_ARM=y
++CONFIG_HAVE_PWM=y
+ CONFIG_SYS_SUPPORTS_APM_EMULATION=y
+ CONFIG_HAVE_SCHED_CLOCK=y
+ CONFIG_GENERIC_GPIO=y
+@@ -1266,6 +1267,7 @@
+ # CONFIG_LCD_LD9040 is not set
+ CONFIG_BACKLIGHT_CLASS_DEVICE=y
+ CONFIG_BACKLIGHT_GENERIC=m
++CONFIG_BACKLIGHT_PWM=y
+ # CONFIG_BACKLIGHT_ADP8860 is not set
+ # CONFIG_BACKLIGHT_ADP8870 is not set
+ 
+@@ -1518,6 +1520,7 @@
+ # CONFIG_LEDS_LP5523 is not set
+ # CONFIG_LEDS_PCA955X is not set
+ # CONFIG_LEDS_DAC124S085 is not set
++# CONFIG_LEDS_PWM is not set
+ # CONFIG_LEDS_REGULATOR is not set
+ # CONFIG_LEDS_BD2802 is not set
+ # CONFIG_LEDS_LT3593 is not set
+diff -uNr old/arch/arm/configs/owen_spk210_can_var_defconfig new/arch/arm/configs/owen_spk210_can_var_defconfig
+--- old/arch/arm/configs/owen_spk210_can_var_defconfig	2014-01-05 10:37:38.730462700 +0400
++++ new/arch/arm/configs/owen_spk210_can_var_defconfig	2014-01-08 11:07:14.533443300 +0400
+@@ -3,6 +3,7 @@
+ # Linux/arm 3.0.18 Kernel Configuration
+ #
+ CONFIG_ARM=y
++CONFIG_HAVE_PWM=y
+ CONFIG_SYS_SUPPORTS_APM_EMULATION=y
+ CONFIG_HAVE_SCHED_CLOCK=y
+ CONFIG_GENERIC_GPIO=y
+@@ -1288,6 +1289,7 @@
+ # CONFIG_LCD_LD9040 is not set
+ CONFIG_BACKLIGHT_CLASS_DEVICE=y
+ CONFIG_BACKLIGHT_GENERIC=m
++CONFIG_BACKLIGHT_PWM=y
+ # CONFIG_BACKLIGHT_ADP8860 is not set
+ # CONFIG_BACKLIGHT_ADP8870 is not set
+ 
+@@ -1540,6 +1542,7 @@
+ # CONFIG_LEDS_LP5523 is not set
+ # CONFIG_LEDS_PCA955X is not set
+ # CONFIG_LEDS_DAC124S085 is not set
++# CONFIG_LEDS_PWM is not set
+ # CONFIG_LEDS_REGULATOR is not set
+ # CONFIG_LEDS_BD2802 is not set
+ # CONFIG_LEDS_LT3593 is not set
+diff -uNr old/arch/arm/configs/owen_spk210_var_defconfig new/arch/arm/configs/owen_spk210_var_defconfig
+--- old/arch/arm/configs/owen_spk210_var_defconfig	2014-01-05 10:37:38.734462600 +0400
++++ new/arch/arm/configs/owen_spk210_var_defconfig	2014-01-08 11:07:14.537443300 +0400
+@@ -3,6 +3,7 @@
+ # Linux/arm 3.0.18 Kernel Configuration
+ #
+ CONFIG_ARM=y
++CONFIG_HAVE_PWM=y
+ CONFIG_SYS_SUPPORTS_APM_EMULATION=y
+ CONFIG_HAVE_SCHED_CLOCK=y
+ CONFIG_GENERIC_GPIO=y
+@@ -1266,6 +1267,7 @@
+ # CONFIG_LCD_LD9040 is not set
+ CONFIG_BACKLIGHT_CLASS_DEVICE=y
+ CONFIG_BACKLIGHT_GENERIC=m
++CONFIG_BACKLIGHT_PWM=y
+ # CONFIG_BACKLIGHT_ADP8860 is not set
+ # CONFIG_BACKLIGHT_ADP8870 is not set
+ 
+@@ -1518,6 +1520,7 @@
+ # CONFIG_LEDS_LP5523 is not set
+ # CONFIG_LEDS_PCA955X is not set
+ # CONFIG_LEDS_DAC124S085 is not set
++# CONFIG_LEDS_PWM is not set
+ # CONFIG_LEDS_REGULATOR is not set
+ # CONFIG_LEDS_BD2802 is not set
+ # CONFIG_LEDS_LT3593 is not set

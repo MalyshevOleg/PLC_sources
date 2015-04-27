@@ -1,0 +1,11 @@
+--- a/util-linux/hwclock.c	2010-03-20 04:58:07.000000000 +0200
++++ b/util-linux/hwclock.c	2010-04-01 18:56:08.000000000 +0300
+@@ -109,7 +109,7 @@
+ 
+ static void from_sys_clock(const char **pp_rtcname, int utc)
+ {
+-#define TWEAK_USEC 200
++#define TWEAK_USEC 1024
+ 	struct tm tm_time;
+ 	struct timeval tv;
+ 	unsigned adj = TWEAK_USEC;

@@ -1,0 +1,512 @@
+Index: report_gen/telegram.c
+===================================================================
+--- report_gen/telegram.c	(revision 2525)
++++ report_gen/telegram.c	(revision 2815)
+@@ -21,7 +21,7 @@
+ #define ID_HDR          0x7A
+ #define ID_CRYPTO       0x2F2F
+ 
+-static const char REPORT_TIME[] = "23:59";
++static const char REPORT_TIME[] = "00:01";
+ 
+ enum
+ {
+Index: report_gen/config.h
+===================================================================
+--- report_gen/config.h	(revision 2525)
++++ report_gen/config.h	(revision 2815)
+@@ -2,7 +2,7 @@
+ #define CONFIG_H
+ 
+ #define APP_NAME "repgen"
+-#define APP_VERSION "0.2.1"
++#define APP_VERSION "0.3.1"
+ 
+ #define LOCK_SELF_MONTHLY_FILE   "/var/lock/repgen_monthly.lock"
+ #define LOCK_SELF_CURRENT_FILE   "/var/lock/repgen_current.lock"
+Index: report_gen/whitelist.c
+===================================================================
+--- report_gen/whitelist.c	(revision 0)
++++ report_gen/whitelist.c	(revision 2815)
+@@ -0,0 +1,60 @@
++#include <errno.h>
++#include <string.h>
++
++#include "msg_strings.h"
++#include "app_log.h"
++#include "whitelist.h"
++
++/* 
++ * Return value:
++ *   0 on success
++ *   1 on end of file
++ *  -1 on error
++ */
++int whitelist_read(FILE *f, struct wl_pair_t *pair)
++{
++    int ret;
++
++    clearerr(f);
++    ret = fscanf(f, "%8s;%8s", pair->id, pair->idpk);
++
++    if (ret == EOF)
++    {
++        if (feof(f))
++        {
++            return 1;
++        }
++        log_err(msg_whitelist_read_failed, strerror(errno));
++        return -1;
++    }
++
++    if (ret != 2)
++    {
++        log_err(msg_whitelist_read_failed, msg_invalid_archive_format);
++        return -1;
++    }
++
++    return 0;
++}
++
++FILE *whitelist_open(const char *name)
++{
++    FILE *f;
++
++    f = fopen(name, "r");
++
++    if (f == NULL)
++    {
++        log_err(msg_whitelist_open_failed, strerror(errno));
++    }
++
++    return f;
++}
++
++void whitelist_close(FILE *f)
++{
++    if (f != NULL)
++    {
++        fclose(f);
++    }
++}
+Index: report_gen/repgen.c
+===================================================================
+--- report_gen/repgen.c	(revision 2525)
++++ report_gen/repgen.c	(revision 2815)
+@@ -11,12 +11,16 @@
+ #include "app_log.h"
+ #include "msg_strings.h"
+ #include "config.h"
++#include "whitelist.h"
+ 
+-static void report_line(FILE *f, struct report_rec_t *rec, int current)
++static void report_line(FILE *f, struct report_rec_t *rec, int current, char type)
+ {
+     int ret;
+ 
+-    ret = fprintf(f, 
++    ret = fprintf(f,
++#ifdef STAGE4
++               "%c;"
++#endif
+                "\"%s\";"        // IDCounter
+                "%02u;"          // CounterType
+                "%i;"            // RSSI
+@@ -33,6 +37,9 @@
+                "%05u;"          // OperatingTime
+                "\"%s\""         // Note
+                "\n",
++#ifdef STAGE4
++               type,
++#endif
+                rec->id, 
+                rec->type,
+                rec->rssi, 
+@@ -70,6 +77,13 @@
+         return 1;
+     }
+ 
++    /* if whitelist present skip files from another IDPKs */
++    if (ctx->wl_pair && 
++        (strcmp(ctx->wl_pair->idpk, idpk) || strcmp(ctx->wl_pair->id, id)))
++    {
++        return 1;
++    }
++
+     /* skip files for month already processed */
+     if (ctx->do_monthly && ctx->last_month == year*12 + (month-1))
+     {
+@@ -94,13 +108,12 @@
+     }
+ 
+     /* include measured value for current date */
+-    report_line(ctx->output, &rec, 1);
++    report_line(ctx->output, &rec, 1, ctx->type++);
+ 
+-    /* current archive also should be processed for monthly report: 
+-       include measured value for report date */
+-    if (ctx->monthly && !ctx->do_monthly)
++    /* always include measured value for report date from current archive */
++    if (!ctx->do_monthly)
+     {
+-        report_line(ctx->output, &rec, 0);
++        report_line(ctx->output, &rec, 0, ctx->type++);
+     }
+ 
+     ctx->processed = 1;
+@@ -146,7 +159,7 @@
+ 
+     if (check_dir_name(name))
+     {
+-        log_warn(msg_invalid_archive_directory_name, name);
++        log_warn(msg_invalid_device_name, name);
+         return 1;
+     }
+ 
+@@ -156,6 +169,7 @@
+     }
+ 
+     ctx->processed = 0;
++    ctx->type = 'A';
+     /* process current archive in both cases */
+     ctx->do_monthly = 0;
+ 
+@@ -166,7 +180,11 @@
+ 
+     if (!ctx->processed)
+     {
+-        log_warn(msg_no_current_archives, name);
++        if (ctx->wl_pair == NULL)
++        {
++            /* log only if archive is processed but not whitelist */
++            log_warn(msg_no_current_archives, name);
++        }
+         return 1;
+     }
+ 
+@@ -193,7 +211,33 @@
+     return ctx->count < MAX_RECORDS; /* don't process more than 3000 IDs */
+ }
+ 
++static void parse_whitelist(struct context_t *ctx)
++{
++    struct wl_pair_t pair;
++    char *path;
++    int ret;
+ 
++    do
++    {
++        ret = whitelist_read(ctx->whitelist, &pair);
++        if (ret > 0)
++            break;
++        if (ret < 0)
++            continue;
++
++        ++ctx->wl_entries_count;
++
++        ctx->wl_pair = &pair;
++        path = mkpath(ctx->cur_dir, pair.id);
++        if (path)
++        {
++            ret = dir_callback(pair.id, path, ctx);
++        }
++        free(path);
++        ctx->wl_pair = NULL;
++    } while (ret);
++}
++
+ int main(int argc, char *argv[])
+ {
+     int ret = 0;
+@@ -204,13 +248,31 @@
+         return 1;
+     }
+ 
+-    if (parsedir(ctx.cur_dir, 0, dir_filter, dir_callback, &ctx) != 0)
++    if (ctx.whitelist)
+     {
+-        log_warn(msg_parse_current_dir_failed, ctx.cur_dir, strerror(errno));
+-        ctx.fatal_error = 1;
+-        ret = 1;
++        parse_whitelist(&ctx);
++        if (ctx.wl_entries_count == 0)
++        {
++            log_warn(msg_no_whitelist_entries);
++            ctx.fatal_error = 1;
++        }
+     }
+ 
++    if (ctx.wl_entries_count == 0)
++    {
++        if (parsedir(ctx.cur_dir, 0, dir_filter, dir_callback, &ctx) != 0)
++        {
++            log_warn(msg_parse_current_dir_failed, ctx.cur_dir, strerror(errno));
++            ctx.fatal_error = 1;
++            ret = 1;
++        }
++    }
++
++#ifdef STAGE4
++    /* last line: while list entries and unique ids processed */
++    fprintf(ctx.output, "%i;%i\n", ctx.wl_entries_count, ctx.count);
++#endif
++
+     log_info(ctx.fatal_error ? msg_report_complete_with_errors : msg_report_complete_successfull,
+              ctx.monthly ? msg_monthly_name : msg_current_name);
+ 
+Index: report_gen/whitelist.h
+===================================================================
+--- report_gen/whitelist.h	(revision 0)
++++ report_gen/whitelist.h	(revision 2815)
+@@ -0,0 +1,19 @@
++#ifndef WHITELIST_H
++#define WHITELIST_H
++
++#include <stdio.h>
++#include <sys/types.h>
++
++struct wl_pair_t
++{
++    char id[9];
++    char idpk[9];
++};
++
++int whitelist_read(FILE *f, struct wl_pair_t *pair);
++
++FILE *whitelist_open(const char *name);
++
++void whitelist_close(FILE *f);
++
++#endif /* WHITELIST_H */
+Index: report_gen/context.c
+===================================================================
+--- report_gen/context.c	(revision 2525)
++++ report_gen/context.c	(revision 2815)
+@@ -9,6 +9,7 @@
+ #include "app_log.h"
+ #include "msg_strings.h"
+ #include "config.h"
++#include "whitelist.h"
+ #include "context.h"
+ 
+ struct options_t
+@@ -16,12 +17,13 @@
+     char *path;
+     char *output_file;
+     char *log_dir;
++    char *whitelist_file;
+     int   monthly;
+ };
+ 
+ static void usage(char *progname)
+ {
+-    fprintf(stderr, "Usage: %s [ -c | -m ] [ -o file ] [ -l file ] <directory>\n",
++    fprintf(stderr, "Usage: %s [ -c | -m ] [ -o file ] [ -l file ] [ -w whitelist ] <directory>\n",
+             progname > 0 ? basename(progname) : "program");
+ }
+ 
+@@ -31,7 +33,7 @@
+ 
+     options->monthly = -1;
+ 
+-    while ((opt = getopt(argc, argv, "cmo:l:h")) != -1)
++    while ((opt = getopt(argc, argv, "cmo:l:w:h")) != -1)
+     {
+         switch (opt)
+         {
+@@ -56,6 +58,10 @@
+                 options->log_dir = optarg;
+                 break;
+ 
++            case 'w':
++                options->whitelist_file = optarg;
++                break;
++
+             default:
+                 usage(argv[0]);
+                 return 1;
+@@ -115,7 +121,8 @@
+     {
+         .path = NULL,
+         .output_file = NULL,
+-        .log_dir = NULL
++        .log_dir = NULL,
++        .whitelist_file = NULL
+     };
+ 
+     if (parse_options(argc, argv, &options) != 0)
+@@ -145,6 +152,9 @@
+     ctx->cur_dir = mkpath(options.path, CURRENT_DIRNAME);
+     ctx->mon_dir = mkpath(options.path, MONTHLY_DIRNAME);
+     ctx->count = 0;
++    ctx->wl_entries_count = 0;
++    ctx->wl_pair = NULL;
++
+     ctx->output = stdout;
+ 
+     if (options.output_file)
+@@ -164,6 +174,14 @@
+         goto failed;
+     }
+ 
++    if (options.whitelist_file)
++    {
++        ctx->whitelist = whitelist_open(options.whitelist_file);
++    } else
++    {
++        ctx->whitelist = NULL;
++    }
++
+     return 0;
+ 
+ failed:
+@@ -173,6 +191,7 @@
+ 
+ void context_done(struct context_t *ctx)
+ {
++    whitelist_close(ctx->whitelist);
+     free(ctx->mon_dir);
+     free(ctx->cur_dir);
+     fclose(ctx->output);
+Index: report_gen/check_last_day.sh
+===================================================================
+--- report_gen/check_last_day.sh	(revision 0)
++++ report_gen/check_last_day.sh	(revision 2815)
+@@ -0,0 +1,60 @@
++#!/bin/sh
++
++set -e
++
++T=$1
++F=$2
++
++# T - текущее время
++# F - время последней модификации файла отчета
++# A - начало отчетного периода предыдущего месяца
++# B - начало текущего месяца (конец отчетного периода предыдущего месяца)
++# C - начало отчетного периода текущего месяца
++
++#        |............текущий месяц...|
++# __|____|_______________________|____|__
++#   A    B                       C
++
++if [ -z "$T" -o -z "$F" ]; then
++    cat > /dev/stderr <<EOF
++Invalid input parameters.
++Usage: $(basename $0) <current_timestamp> <file_timestamp>
++EOF
++    exit 1;
++fi
++
++# промежуток времени от конца дня, когда должен быть сформирован отчет, в секундах
++DELTA=$(expr 3600 \* 12)
++
++# текущий месяц/год
++M=$(date -d "@$T" +"%m")
++Y=$(date -d "@$T" +"%Y")
++
++# начало текущего месяца
++B=$(date -d "$Y-$M-1 00:00" +"%s")
++
++# последний день предыдущего месяца (когда должен был быть сформирован отчет)
++A=$(expr $B - $DELTA)
++
++# следующий месяц/год
++NY=$(expr $Y + $M / 12)
++NM=$(expr $M % 12 + 1)
++
++# начало следующего месяца
++NMT=$(date -d "$NY-$NM-1 00:00" +"%s")
++# последний день текущего месяца
++C=$(expr $NMT - $DELTA)
++
++# $T -ge $C -a $F -lt $C : пришло время формирования нового отчета. формировать
++# $T -lt $C -a $F -lt $A : пропущено предыдущее формирование. формировать
++# $T -lt $F              : файл в будущем, ошибка. формировать
++
++if  [ \( $T -ge $C -a $F -lt $C \) -o \
++      \( $T -lt $C -a $F -lt $A \) -o \
++      \( $T -lt $F \) ]; then
++        echo "1"    # формировать отчет
++else
++        echo "0"    # пропустить формирование отчета
++fi
++
++exit 0
+
+Property changes on: report_gen/check_last_day.sh
+___________________________________________________________________
+Added: svn:executable
+\ No newline at end of property
+Index: report_gen/context.h
+===================================================================
+--- report_gen/context.h	(revision 2525)
++++ report_gen/context.h	(revision 2815)
+@@ -3,20 +3,26 @@
+ 
+ #include <stdio.h>
+ 
++#include "whitelist.h"
++
+ struct context_t
+ {
+     /* global parameters, unchanged during processing */
+     char *cur_dir;          /* full path to current archive location               */
+     char *mon_dir;          /* full path to monthly archive location               */
+     FILE *output;           /* output file structure                               */
+-    int count;              /* number of IDs processed                             */
+-    int month_count;        /* number of monthes processed by each ID              */
+     int monthly;            /* nonzero if monthly report, zero for current report  */
+     /* local parameters, controls processing */
+     int do_monthly;         /* nonzero if currently month archive is processed     */
+     int processed;          /* nonzero if at least one archive is processed        */
+-    int fatal_error;        /* nonzero if any fatal error occured during process  */
+-    int last_month;         /* last year*12 + month processed */
++    int fatal_error;        /* nonzero if any fatal error occured during process   */
++    int last_month;         /* last year*12 + month processed                      */
++    int count;              /* number of IDs processed                             */
++    int month_count;        /* number of monthes processed by each ID              */
++    char type;              /* type of record ('A', 'B', 'C' etc )                 */
++    int wl_entries_count;   /* number of entries in while list                     */
++    FILE *whitelist;        /* whitelist file structure                            */
++    struct wl_pair_t *wl_pair; /* ID:IDPK pair from whitelist to check             */
+ };
+ 
+ int context_init(int argc, char *argv[], struct context_t *ctx);
+Index: report_gen/msg_strings.txt
+===================================================================
+--- report_gen/msg_strings.txt	(revision 2525)
++++ report_gen/msg_strings.txt	(revision 2815)
+@@ -15,14 +15,16 @@
+ msg_invalid_archive_format          "неизвестный формат"
+ msg_invalid_archive_name            "имя файла архива %s не соответствует имени в архиве %s"
+ msg_invalid_archive_file_name       "ошибочное имя файла архива %s"
+-msg_invalid_archive_directory_name  "ошибочное имя каталога устройства %s"
++msg_invalid_device_name             "ошибочное имя устройства %s"
+ 
+ msg_current_report_create_failed    "ошибка создания файла текущего отчета %s: %s"
+ msg_monthly_report_create_failed    "ошибка создания файла помесячного отчета %s: %s"
+ msg_report_write_failed             "ошибка записи в файл отчета"
+ 
+ msg_err_readdir                     "ошибка чтения каталога %s: %s"
+-msg_sync_time_stopped               "синхронизация времени окончена (синхронизировано устройств: %d)"
++msg_whitelist_open_failed           "ошибка открытия белого списка: %s"
++msg_whitelist_read_failed           "ошибка чтения белого списка: %s"
++msg_no_whitelist_entries            "ни одной корректной записи в белом списке не прочитано; обрабатывается архив"
+ 
+ msg_report_complete_successfull     "формирование файла %s архива отчёта выполнено успешно"
+ msg_report_complete_with_errors     "формирование файла %s архива отчёта выполнено с ошибками"
+Index: report_gen/Makefile
+===================================================================
+--- report_gen/Makefile	(revision 2525)
++++ report_gen/Makefile	(revision 2815)
+@@ -22,7 +22,8 @@
+         locks.o         \
+         msg_strings.o   \
+         repgen.o        \
+-        telegram.o
++        telegram.o      \
++        whitelist.o
+ 
+ DEPS = $(OBJS:.o=.d)
+ 

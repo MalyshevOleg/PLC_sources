@@ -1,0 +1,12 @@
+diff -uNr jpeg-8d/ltmain.sh jpeg-8d-new/ltmain.sh
+--- jpeg-8d/ltmain.sh	2011-12-22 17:48:30.000000000 +0400
++++ jpeg-8d-new/ltmain.sh	2013-09-12 16:04:59.780072140 +0400
+@@ -3212,7 +3212,7 @@
+       fi
+ 
+       # Do each command in the postinstall commands.
+-      func_execute_cmds "$old_postinstall_cmds" 'exit $?'
++      #func_execute_cmds "$old_postinstall_cmds" 'exit $?'
+     done
+ 
+     test -n "$future_libdirs" && \

@@ -1,0 +1,25 @@
+
+# VPN options template for web-configurator: common options for all profiles
+lock
+
+nobsdcomp
+nodeflate
+lcp-echo-failure 30
+lcp-echo-interval 5
+refuse-eap
+refuse-chap
+refuse-mschap
+require-mschap-v2
+require-mppe-128
+
+noauth
+
+noipdefault
+nodefaultroute
+
+noproxyarp
+
+debug
+updetach
+# end of common options
+

@@ -1,0 +1,88 @@
+--- mtd-1/Makefile	2006-05-01 00:27:57.000000000 +0300
++++ mtd-2/Makefile	2007-01-28 18:50:52.000000000 +0200
+@@ -8,7 +8,8 @@
+ INCLUDEDIR=/usr/include
+ #CROSS=arm-linux-
+ CC := $(CROSS)gcc
+-CFLAGS := -I./include -O2 -Wall
++CFLAGS := -I./include -Os -Wall
++STRIP := $(CROSS)strip
+ 
+ TARGETS = ftl_format flash_erase flash_eraseall nanddump doc_loadbios \
+ 	mkfs.jffs ftl_check mkfs.jffs2 flash_lock flash_unlock flash_info \
+@@ -56,6 +57,5 @@
+ 
+ install: ${TARGETS}
+ 	mkdir -p ${DESTDIR}/${SBINDIR}
++	$(STRIP) ${TARGETS}
+ 	install -m0755 ${TARGETS} ${DESTDIR}/${SBINDIR}/
+-	mkdir -p ${DESTDIR}/${MANDIR}/man1
+-	gzip -c mkfs.jffs2.1 > ${DESTDIR}/${MANDIR}/man1/mkfs.jffs2.1.gz
+--- mtd-utils-1.0.1/mkfs.jffs2.c~	2006-09-18 10:42:57.000000000 +0300
++++ mtd-utils-1.0.1/mkfs.jffs2.c	2007-06-29 20:51:16.000000000 +0300
+@@ -47,6 +47,8 @@
+  *  -Erik, November 2002
+  */
+ 
++#undef HAVE_ACL
++
+ #define _GNU_SOURCE
+ #include <sys/types.h>
+ #include <stdio.h>
+@@ -65,7 +67,9 @@
+ #include <time.h>
+ #include <getopt.h>
+ #include <sys/xattr.h>
++#ifdef HAVE_ACL
+ #include <sys/acl.h>
++#endif
+ #include <byteswap.h>
+ #define crc32 __complete_crap
+ #include <zlib.h>
+@@ -1030,6 +1034,7 @@
+ 	padword();
+ }
+ 
++#ifdef HAVE_ACL
+ typedef struct xattr_entry {
+ 	struct xattr_entry *next;
+ 	uint32_t xid;
+@@ -1258,6 +1263,10 @@
+ 		padword();
+ 	}
+ }
++#else
++/* don't do anything, corresponds to  if (!enable_xattr) return;  above */
++#define write_xattr_entry(x)
++#endif
+ 
+ static void recursive_populate_directory(struct filesystem_entry *dir)
+ {
+@@ -1451,9 +1460,11 @@
+ 	"  -q, --squash            Squash permissions and owners making all files be owned by root\n"
+ 	"  -U, --squash-uids       Squash owners making all files be owned by root\n"
+ 	"  -P, --squash-perms      Squash permissions on all files\n"
++#ifdef HAVE_ACL
+ 	"      --with-xattr        stuff all xattr entries into image\n"
+ 	"      --with-selinux      stuff only SELinux Labels into jffs2 image\n"
+ 	"      --with-posix-acl    stuff only POSIX ACL entries into jffs2 image\n"
++#endif
+ 	"  -h, --help              Display this help text\n"
+ 	"  -v, --verbose           Verbose operation\n"
+ 	"  -V, --version           Display version information\n"
+@@ -1772,6 +1783,7 @@
+ 					perror_msg_and_die("cannot open (incremental) file");
+ 				}
+ 				break;
++#ifdef HAVE_ACL
+ 			case 1000:	/* --with-xattr  */
+ 				enable_xattr |= (1 << JFFS2_XPREFIX_USER)
+ 						| (1 << JFFS2_XPREFIX_SECURITY)
+@@ -1786,6 +1798,7 @@
+ 				enable_xattr |= (1 << JFFS2_XPREFIX_ACL_ACCESS)
+ 						| (1 << JFFS2_XPREFIX_ACL_DEFAULT);
+ 				break;
++#endif
+ 		}
+ 	}
+ 	if (out_fd == -1) {

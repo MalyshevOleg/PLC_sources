@@ -1,0 +1,10 @@
+debian/ubuntu:
+
+sudo apt-get install libmpfr-dev libgmp3-dev xutils-dev texinfo bison flex libtool gawk zlib1g-dev 
+sudo apt-get install libglib2.0-dev autoconf g++ libncurses5-dev liblzo2-dev util-linux uuid-dev gettext 
+sudo apt-get install subversion make zip dos2unix imagemagick rpm2cpio dialog ffmpeg a56 squashfs-tools vim-common
+# Возможно textinfo потребуется версии 4.35 - соотвервенно wget .... ;make configure; make
+
+centos:
+
+yum install mpfr-devel gmp-devel gcc-c++ imake texinfo bison flex libtool gawk zlib-devel glib2-devel autoconf ncurses-devel lzo-devel util-linux wget squashfs-tools subversion make zip texinfo libuuid-devel perl-Archive-Zip dos2unix rpm dialog ImageMagick ffmpeg vim-common lzop

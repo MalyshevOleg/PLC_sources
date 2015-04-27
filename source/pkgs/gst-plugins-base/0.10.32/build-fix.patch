@@ -1,0 +1,11 @@
+--- a/tools/Makefile.in	2011-01-21 12:13:24.000000000 +0200
++++ b/tools/Makefile.in	2012-12-19 19:35:51.000000000 +0200
+@@ -799,7 +799,7 @@
+ 
+ install-dvi-am:
+ 
+-install-exec-am: install-binPROGRAMS install-binSCRIPTS
++install-exec-am:
+ 
+ install-html: install-html-am
+ 

@@ -1,0 +1,12 @@
+diff -uNr tslib-1.0-orig/tests/ts_calibrate.c tslib-1.0/tests/ts_calibrate.c
+--- tslib-1.0-orig/tests/ts_calibrate.c	2014-09-30 15:21:10.817580357 +0400
++++ tslib-1.0/tests/ts_calibrate.c	2014-09-30 15:24:29.085594306 +0400
+@@ -145,7 +145,7 @@
+ 		last_y <<= 16;
+ 		for (i = 0; i < NR_STEPS; i++) {
+ 			put_cross (last_x >> 16, last_y >> 16, 2 | XORMODE);
+-			usleep (1000);
++			usleep (50000);
+ 			put_cross (last_x >> 16, last_y >> 16, 2 | XORMODE);
+ 			last_x += dx;
+ 			last_y += dy;

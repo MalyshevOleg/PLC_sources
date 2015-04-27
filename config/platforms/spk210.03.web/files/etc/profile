@@ -1,0 +1,33 @@
+#!/bin/sh
+
+export QTDIR=/
+
+export TSLIB_TSEVENTTYPE=INPUT
+export TSLIB_CONSOLEDEVICE=none
+export TSLIB_TSDEVICE=/dev/input/event1
+export TSLIB_FBDEVICE=/dev/fb0
+export TSLIB_CALIBFILE=/etc/pointercal
+export TSLIB_CONFFILE=/etc/ts.conf
+export TSLIB_PLUGINDIR=/usr/lib/ts
+export FB_COLOR_DEPTH=16
+
+export CONSOLE_WIDTH=100
+export CONSOLE_HEIGHT=75
+
+# specify the mouse to suit the names of plugin create
+export QWS_MOUSE_PROTO="tslib:/dev/input/event1"
+# QT keyboard
+export AT91SAM926x_KBD_DEV=/dev/input/event0
+# define keyboard device name
+export AT91SAM926x_KBD_CONF_FILE=/etc/kbd.xml
+# specify the keyboard to suit the names of plugin create
+export QWS_KEYBOARD="AT91SAM926xKbdhandler"
+
+# support DPI's resolution
+#export QWS_DISPLAY="LinuxFB:mmWidth=310:mmHeight=190"
+if [ -f /mnt/ufs/root/rotate ];
+then
+export QWS_DISPLAY="Transformed:Rot90:LinuxFB:mmWidth=310:mmHeight=190"
+else
+export QWS_DISPLAY="LinuxFB:mmWidth=310:mmHeight=190"
+fi

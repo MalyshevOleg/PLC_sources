@@ -1,0 +1,75 @@
+--- a/src/scripts/install/ltmain.sh	2011-03-06 03:36:59.000000000 +0200
++++ b/src/scripts/install/ltmain.sh	2011-04-21 18:47:01.000000000 +0300
+@@ -127,7 +127,7 @@
+ AR_FLAGS="cru"
+ 
+ # A symbol stripping program.
+-STRIP="strip"
++STRIP="arm-unknown-linux-gnueabi-strip"
+ 
+ # Commands used to install an old-style archive.
+ RANLIB="ranlib"
+@@ -135,7 +135,7 @@
+ old_postuninstall_cmds=""
+ 
+ # A C compiler.
+-LTCC="gcc"
++LTCC="arm-unknown-linux-gnueabi-gcc"
+ 
+ # LTCC compiler flags.
+ LTCFLAGS="-Wall -g -O2"
+@@ -255,8 +255,8 @@
+ dlopen_self_static=no
+ 
+ # Commands to strip libraries.
+-old_striplib="strip --strip-debug"
+-striplib="strip --strip-unneeded"
++old_striplib="arm-unknown-linux-gnueabi-strip --strip-debug"
++striplib="arm-unknown-linux-gnueabi-strip --strip-unneeded"
+ 
+ 
+ # The linker used to build libraries.
+@@ -266,7 +266,7 @@
+ old_archive_cmds="\$AR \$AR_FLAGS \$oldlib\$oldobjs~\$RANLIB \$oldlib"
+ 
+ # A language specific compiler.
+-CC="gcc"
++CC="arm-unknown-linux-gnueabi-gcc"
+ 
+ # Is the compiler the GNU compiler?
+ with_gcc=yes
+--- a/src/Makefile.in	2011-03-30 03:49:58.000000000 +0300
++++ b/src/Makefile.in	2011-04-21 20:40:19.000000000 +0300
+@@ -345,7 +345,7 @@
+ top_build_prefix = @top_build_prefix@
+ top_builddir = @top_builddir@
+ top_srcdir = @top_srcdir@
+-SUBDIRS = include man rpm scripts
++SUBDIRS = include rpm scripts
+ all: all-recursive
+ 
+ .SUFFIXES:
+--- a/module/owlib/src/c/Makefile.in	2011-04-21 19:02:35.000000000 +0300
++++ b/module/owlib/src/c/Makefile.in	2011-04-21 19:02:02.000000000 +0300
+@@ -602,7 +602,7 @@
+ #	-release $(LT_RELEASE) \
+ #	-export-dynamic \
+ #	$(LDADDS)
+-AM_CFLAGS = -I../include \
++AM_CFLAGS = -I$(srcdir)/../include \
+ 	-fexceptions \
+ 	-Wall \
+ 	-W \
+--- a/module/owcapi/src/c/Makefile.in	2011-03-30 03:49:55.000000000 +0300
++++ b/module/owcapi/src/c/Makefile.in	2011-04-21 19:31:06.000000000 +0300
+@@ -358,8 +358,8 @@
+ @HAVE_CYGWIN_FALSE@libowcapi_la_LDFLAGS = -low -version-info $(LT_CURRENT):$(LT_REVISION):$(LT_AGE) -release $(LT_RELEASE) ${PTHREAD_LIBS} ${LIBUSB_LIBS} ${LD_EXTRALIBS} -shared -shrext .so
+ # Debian patch
+ @HAVE_CYGWIN_TRUE@libowcapi_la_LDFLAGS = -low -version-info $(LT_CURRENT):$(LT_REVISION):$(LT_AGE) -release $(LT_RELEASE) ${PTHREAD_LIBS} ${LD_EXTRALIBS} -shared -shrext .so
+-AM_CFLAGS = -I../include \
+-	-I../../../owlib/src/include \
++AM_CFLAGS = -I$(srcdir)/../include \
++	-I$(top_srcdir)/module/owlib/src/include \
+ 	-L../../../owlib/src/c \
+ 	-fexceptions \
+ 	-Wall \

@@ -1,0 +1,5 @@
+# SIM PIN
+WC_PIN=0000
+
+# wait X seconds after entering PIN
+WC_PIN_WAIT_SEC=5

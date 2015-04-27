@@ -1,0 +1,41 @@
+#!/bin/sh
+# Load the mixer settings for ALSA.
+# (the Advanced Linux Sound Architecture)
+
+#set -e
+set +e
+
+. /etc/functions
+
+ETC_DIR=/etc
+SND_STATE=${ETC_DIR}/asound.state
+NO_STATE=${ETC_DIR}/no.asound.state
+
+# A function to load the ALSA mixer settings:
+load_alsa_mixer() {
+  if [ -r ${SND_STATE} ]; then
+    echo -n "Loading ALSA mixer settings... "
+    /usr/sbin/alsactl -f ${SND_STATE} restore 1> /dev/null
+    check_status
+  else
+    # It's possible a user might not want to set a default sound state.
+    # In that case, do this:  touch /etc/no.asound.state
+    if [ ! -r ${NO_STATE} ]; then
+      echo -n "Setting default ALSA mixer settings... "
+
+      # set default mixer volumes for ALSA
+      if [ -e /etc/alsa-defaults ]; then
+        cat /etc/alsa-defaults | amixer -s -q
+      fi
+
+      check_status
+      echo -n "Storing default ALSA mixer settings... "
+      /usr/sbin/alsactl -f ${SND_STATE} store
+      check_status
+    fi
+  fi
+}
+
+if [ -d /proc/asound ]; then
+  load_alsa_mixer
+fi

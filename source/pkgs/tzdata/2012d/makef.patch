@@ -1,0 +1,110 @@
+--- a/Makefile	2012-07-20 02:35:33.000000000 +0300
++++ b/Makefile	2012-08-01 17:18:17.000000000 +0300
+@@ -2,6 +2,8 @@
+ # This file is in the public domain, so clarified as of
+ # 2009-05-17 by Arthur David Olson.
+ 
++SRCDIR=.
++VPATH=$(SRCDIR)
+ # Version numbers of the code and data distributions.
+ TZCODE_VERSION = tzcode2012c
+ TZDATA_VERSION = tzdata2012d
+@@ -40,13 +42,13 @@
+ 
+ # Everything gets put in subdirectories of. . .
+ 
+-TOPDIR=		/usr/local
++TOPDIR=		/usr
+ 
+ # "Compiled" time zone information is placed in the "TZDIR" directory
+ # (and subdirectories).
+ # Use an absolute path name for TZDIR unless you're just testing the software.
+ 
+-TZDIR=		$(TOPDIR)/etc/zoneinfo
++TZDIR=		$(TOPDIR)/share/zoneinfo
+ 
+ # The "tzselect", "zic", and "zdump" commands get installed in. . .
+ 
+@@ -81,7 +83,7 @@
+ # POSIX mandates that leap seconds not be counted; for compatibility with it,
+ # use either "posix_only" or "posix_right".
+ 
+-REDO=		posix_right
++REDO=		posix_only
+ 
+ # Since "." may not be in PATH...
+ 
+@@ -215,7 +217,7 @@
+ # before the first Monday in January when a "%V" format is used and January 1
+ # falls on a Friday, Saturday, or Sunday.
+ 
+-CFLAGS=
++CFLAGS=-I$(SRCDIR) -I.
+ 
+ # If you want zic's -s option used when installing, uncomment the next line
+ # ZFLAGS=	-s
+@@ -281,8 +283,8 @@
+ YDATA=		$(PRIMARY_YDATA) pacificnew etcetera backward
+ NDATA=		systemv factory
+ SDATA=		solar87 solar88 solar89
+-TDATA=		$(YDATA) $(NDATA) $(SDATA)
+-TABDATA=	iso3166.tab zone.tab
++TDATA=		$(addprefix $(SRCDIR)/,$(YDATA) $(NDATA) $(SDATA))
++TABDATA=	$(addprefix $(SRCDIR)/,iso3166.tab zone.tab)
+ DATA=		$(YDATA) $(NDATA) $(SDATA) $(TABDATA) leapseconds yearistype.sh
+ WEB_PAGES=	tz-art.htm tz-link.htm
+ MISC=		usno1988 usno1989 usno1989a usno1995 usno1997 usno1998 \
+@@ -303,20 +305,8 @@
+ 		$(ZIC) -y $(YEARISTYPE) \
+ 			-d $(TZDIR) -l $(LOCALTIME) -p $(POSIXRULES)
+ 		-rm -f $(TZDIR)/iso3166.tab $(TZDIR)/zone.tab
+-		cp iso3166.tab zone.tab $(TZDIR)/.
++		cp $(TABDATA) $(TZDIR)/.
+ 		-mkdir $(TOPDIR) $(ETCDIR)
+-		cp tzselect zic zdump $(ETCDIR)/.
+-		-mkdir $(TOPDIR) $(MANDIR) \
+-			$(MANDIR)/man3 $(MANDIR)/man5 $(MANDIR)/man8
+-		-rm -f $(MANDIR)/man3/newctime.3 \
+-			$(MANDIR)/man3/newtzset.3 \
+-			$(MANDIR)/man5/tzfile.5 \
+-			$(MANDIR)/man8/tzselect.8 \
+-			$(MANDIR)/man8/zdump.8 \
+-			$(MANDIR)/man8/zic.8
+-		cp newctime.3 newtzset.3 $(MANDIR)/man3/.
+-		cp tzfile.5 $(MANDIR)/man5/.
+-		cp tzselect.8 zdump.8 zic.8 $(MANDIR)/man8/.
+ 
+ INSTALL:	ALL install date.1
+ 		-mkdir $(TOPDIR) $(BINDIR)
+@@ -336,7 +326,7 @@
+ 		$(CC) $(CFLAGS) $(LFLAGS) $(TZCOBJS) $(LDLIBS) -o $@
+ 
+ yearistype:	yearistype.sh
+-		cp yearistype.sh yearistype
++		cp $(SRCDIR)/yearistype.sh yearistype
+ 		chmod +x yearistype
+ 
+ posix_only:	zic $(TDATA)
+@@ -454,14 +444,14 @@
+ zonenames:	$(TDATA)
+ 		@$(AWK) '/^Zone/ { print $$2 } /^Link/ { print $$3 }' $(TDATA)
+ 
+-asctime.o:	private.h tzfile.h
+-date.o:		private.h
+-difftime.o:	private.h
+-ialloc.o:	private.h
+-localtime.o:	private.h tzfile.h
+-scheck.o:	private.h
+-strftime.o:	tzfile.h
++asctime.o:	$(SRCDIR)/private.h $(SRCDIR)/tzfile.h
++date.o:		$(SRCDIR)/private.h
++difftime.o:	$(SRCDIR)/private.h
++ialloc.o:	$(SRCDIR)/private.h
++localtime.o:	$(SRCDIR)/private.h $(SRCDIR)/tzfile.h
++scheck.o:	$(SRCDIR)/private.h
++strftime.o:	$(SRCDIR)/tzfile.h
+ zdump.o:	version.h
+-zic.o:		private.h tzfile.h version.h
++zic.o:		$(SRCDIR)/private.h $(SRCDIR)/tzfile.h version.h
+ 
+ .KEEP_STATE:

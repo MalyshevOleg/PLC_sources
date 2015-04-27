@@ -1,0 +1,11 @@
+--- a/Makefile.in	2010-11-01 22:29:11.000000000 +0200
++++ b/Makefile.in	2011-02-18 18:51:33.000000000 +0200
+@@ -231,7 +231,7 @@
+ top_builddir = @top_builddir@
+ top_srcdir = @top_srcdir@
+ AUTOMAKE_OPTIONS = 1.7 foreign dist-zip dist-bzip2
+-SUBDIRS = m4 include vq lib test doc $(am__append_1)
++SUBDIRS = m4 include vq lib test $(am__append_1)
+ m4datadir = $(datadir)/aclocal
+ m4data_DATA = vorbis.m4
+ pkgconfigdir = $(libdir)/pkgconfig

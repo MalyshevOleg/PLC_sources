@@ -1,0 +1,167 @@
+diff -Nru mbmaster-2.0/main.c mbmaster-2.0+/main.c
+--- mbmaster-2.0/main.c	2012-11-08 19:10:35.000000000 +0200
++++ mbmaster-2.0+/main.c	2012-11-19 18:12:51.000000000 +0200
+@@ -1,3 +1,4 @@
++#include <sys/types.h>
+ #include <unistd.h>
+ #include <signal.h>
+ #include <stdio.h>
+@@ -132,7 +133,8 @@
+ 			[MBM_MODE_SYNC_TIME] = mbm_str_am_sync_time,
+ 			[MBM_MODE_GET_ACTUAL_WHITE_LIST] = "getting actual WL",
+ 		};
+-		log_info(mbm_str_app_id, APP_NAME, APP_VERSION, app_mode_titles[ctx->cfg.mode]);
++		log_info(mbm_str_app_id, APP_NAME, APP_VERSION,
++					app_mode_titles[ctx->cfg.mode], getpid());
+ 	}
+ 
+ 	do {
+diff -Nru mbmaster-2.0/Makefile mbmaster-2.0+/Makefile
+--- mbmaster-2.0/Makefile	2012-11-16 15:19:34.000000000 +0200
++++ mbmaster-2.0+/Makefile	2012-11-19 18:12:51.000000000 +0200
+@@ -1,4 +1,4 @@
+-VERSION=2.0.34
++VERSION=2.0.35
+ APP_NAME=mb_master
+ DEBUG=0
+ 
+diff -Nru mbmaster-2.0/mbm_strings.c mbmaster-2.0+/mbm_strings.c
+--- mbmaster-2.0/mbm_strings.c	2012-11-16 15:19:34.000000000 +0200
++++ mbmaster-2.0+/mbm_strings.c	2012-11-19 18:12:51.000000000 +0200
+@@ -3,7 +3,7 @@
+ const char *mbm_str_log_started = "запись в журнал начата";
+ const char *mbm_str_log_stopped = "запись в журнал окончена";
+ 
+-const char *mbm_str_app_id = "%s v%s (режим работы приложения: %s)";
++const char *mbm_str_app_id = "%s v%s (режим работы приложения: %s, pid=%d)";
+ 
+ const char *mbm_str_dir_created = "создан новый подкаталог: %s";
+ const char *mbm_str_dir_failure = "ошибка при создании подкаталога: %s: %s";
+@@ -13,15 +13,7 @@
+ 
+ const char *mbm_str_err_fail_lock = "ошибка блокировки файла %s: %s";
+ 
+-//const char *mbm_err_file_operation = "ошибка файловой операции: %s: файл: %s: %s";
+-//const char *mbm_str_file_open = "открытие";
+-//const char *mbm_str_file_read = "чтение";
+-//const char *mbm_str_file_write = "запись";
+-
+ const char *mbm_str_err_arc_path_too_long = "ошибка: слишком длинный путь архива: %d";
+-//const char *mbm_str_err_scan_buf_alloc = "ошибка выделения памяти для буфера сканириования каталога (%d байт)";
+-const char *mbm_str_err_wl_src_tab_alloc = "ошибка выделения памяти для исходной таблицы белого списка (%d байт)";
+-const char *mbm_str_err_wl_tab_alloc = "ошибка выделения памяти для таблицы белого списка (%d байт)";;
+ const char *mbm_str_err_opendir = "ошибка открытия каталога '%s': %s";
+ const char *mbm_str_err_readdir = "ошибка чтения каталога '%s': %s";
+ const char *mbm_str_err_remove = "ошибка при удалении файла '%s': %s";
+@@ -47,14 +39,12 @@
+ const char *mbm_str_err_wl_clean = "ошибка очистки белого списка ЭСУ %s (адрес %d): %s";
+ const char *mbm_str_err_wl_source_table = "ошибка формирования исходной таблицы для белого списка, ЭСУ %s (адрес %d): %s";
+ const char *mbm_str_err_wl_file = "ошибка создания файла белого списка %s: %s";
+-const char *mbm_str_err_wl_path_too_long = "ошибка: слишком длинный путь белого списка: %d";
+ const char *mbm_str_err_wl_file_read = "ошибка чтения файла белого списка: %s";
+ const char *mbm_str_err_wl_file_too_many_records = "ошибка файла белого списка: превышено допустимое количество записей: %d";
+ const char *mbm_str_err_wl_file_too_many_pk = "ошибка файла белого списка: превышено допустимое количество ЭСУ: %d";
+ const char *mbm_str_err_wl_file_too_many_arc = "ошибка файла белого списка: превышено допустимое количество записей %d для ЭСУ %s = %u";
+ const char *mbm_str_err_set_list_pk_not_on_bus = "белый список содержит записи для отсутствующего в сети ЭСУ: %s";
+ const char *mbm_str_err_wl_set = "ошибка установки белого списка ЭСУ %s (адрес %d): %s";
+-const char *mbm_str_err_move_wl_set = "ошибка перемещения файла белого списка %s -> %s: %s";
+ 
+ const char *mbm_str_slave_found = "ЭСУ по адресу %d: %s, %s, %s, состояние=0x%04X (количество СУ: %d, flash память: %s, радио модуль: %s, сохранение 18-мес. архивов: %sвыполняется, удаление архивов: %sвыполняется)";
+ const char *mbm_str_slave_addrs_assigned = "сеть сконфигурирована: адреса ЭСУ: %d - %d (успешно проверено адресов: %d)";
+@@ -90,13 +80,9 @@
+ 
+ const char *mbm_str_set_wl_started = "установка белого списка начата";
+ const char *mbm_str_wl_table_normalized = "таблица белого списка нормализована: записей: %u";
+-const char *mbm_str_wl_no_records_for_slave = "записи белого списка для ЭСУ %s не найдены";
+-const char *mbm_str_wl_found_records_for_slave = "надено записей белого списка для ЭСУ %s: %d";
+ const char *mbm_str_slave_wl_set = "белый список установлен на ЭСУ %s";
+ const char *mbm_str_set_wl_done = "установка белого списка закончена: количество ЭСУ, где БС удален: %d, установлен: %d (записей: %d), не установлен из-за ошибки: %d";
+ const char *mbm_str_set_list_empty = "устанавливаемый белый список пуст - белые списки на ЭСУ будут удалены";
+-const char *mbm_str_set_wl_empty_done = "установка белого списка закончена (установка пропущена - список пуст)";
+-const char *mbm_str_move_wl_set = "файл белого списка перемещен в %s";
+ 
+ const char *mbm_str_err_bad_set_list_file = "неправильный файл белого списка: %s";
+ const char *mbm_str_err_use_set_list_file = "ошибка при использовании файла белого списка: %s";
+@@ -115,7 +101,6 @@
+ const char *mbm_str_am_set_wl = "установка белого списка";
+ const char *mbm_str_am_sync_time = "синхронизация времени СУ";
+ 
+-/*******/
+ const char *mbm_str_err_wl_stats_file_remove = "ошибка при удалении файла статистики белого списка %s: %s";
+ const char *mbm_str_err_wl_stats_file_write = "ошибка при сохранении файла статистики белого списка %s: %s";
+ 
+diff -Nru mbmaster-2.0/mbm_strings.h mbmaster-2.0+/mbm_strings.h
+--- mbmaster-2.0/mbm_strings.h	2012-11-16 15:19:34.000000000 +0200
++++ mbmaster-2.0+/mbm_strings.h	2012-11-19 18:12:51.000000000 +0200
+@@ -14,15 +14,7 @@
+ 
+ const char *mbm_str_err_fail_lock;
+ 
+-//const char *mbm_err_file_operation;
+-//const char *mbm_str_file_open;
+-//const char *mbm_str_file_read;
+-//const char *mbm_str_file_write;
+-
+ const char *mbm_str_err_arc_path_too_long;
+-//const char *mbm_str_err_scan_buf_alloc;
+-const char *mbm_str_err_wl_src_tab_alloc;
+-const char *mbm_str_err_wl_tab_alloc;
+ const char *mbm_str_err_opendir;
+ const char *mbm_str_err_readdir;
+ const char *mbm_str_err_remove;
+@@ -48,14 +40,12 @@
+ const char *mbm_str_err_wl_clean;
+ const char *mbm_str_err_wl_source_table;
+ const char *mbm_str_err_wl_file;
+-const char *mbm_str_err_wl_path_too_long;
+ const char *mbm_str_err_wl_file_read;
+ const char *mbm_str_err_wl_file_too_many_records;
+ const char *mbm_str_err_wl_file_too_many_pk;
+ const char *mbm_str_err_wl_file_too_many_arc;
+ const char *mbm_str_err_set_list_pk_not_on_bus;
+ const char *mbm_str_err_wl_set;
+-const char *mbm_str_err_move_wl_set;
+ 
+ const char *mbm_str_slave_found;
+ const char *mbm_str_slave_addrs_assigned;
+@@ -91,13 +81,9 @@
+ 
+ const char *mbm_str_set_wl_started;
+ const char *mbm_str_wl_table_normalized;
+-const char *mbm_str_wl_no_records_for_slave;
+-const char *mbm_str_wl_found_records_for_slave;
+ const char *mbm_str_slave_wl_set;
+ const char *mbm_str_set_wl_done;
+ const char *mbm_str_set_list_empty;
+-const char *mbm_str_set_wl_empty_done;
+-const char *mbm_str_move_wl_set;
+ 
+ const char *mbm_str_err_bad_set_list_file;
+ const char *mbm_str_err_use_set_list_file;
+@@ -116,7 +102,6 @@
+ const char *mbm_str_am_set_wl;
+ const char *mbm_str_am_sync_time;
+ 
+-/******/
+ const char *mbm_str_err_wl_stats_file_remove;
+ const char *mbm_str_err_wl_stats_file_write;
+ 
+diff -Nru mbmaster-2.0/mbm_task_clean_fs.c mbmaster-2.0+/mbm_task_clean_fs.c
+--- mbmaster-2.0/mbm_task_clean_fs.c	2012-11-14 19:20:13.000000000 +0200
++++ mbmaster-2.0+/mbm_task_clean_fs.c	2012-11-19 18:12:51.000000000 +0200
+@@ -234,7 +234,6 @@
+ 		/* restore current counter's dir name */
+ 		scan_info->clean_info.path[scan_info->arc_type_dir_len + 1 + 8] = 0;
+ 
+-#if 0
+ 		/* try removing the counter dir - if it's empty it will be removed */
+ 		r = rmdir(scan_info->clean_info.path);
+ 		if (!r) {
+@@ -244,7 +243,6 @@
+ 			log_debug("failed to remove counter arc directory '%s': %s (not empty - is not error)",
+ 				scan_info->clean_info.path, strerror(errno));
+ 		}
+-#endif
+ 	}
+ 	
+ 	log_debug("cleaning arcs in counter dir: '%s' - done: %d", scan_info->clean_info.path, r);
