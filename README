@@ -1,19 +1,8 @@
-This package contains files and scripts to build the toolchain 
-(cross compiler with libraries) and runtime image(s) for the 
-XXXXX ARM board.
+Данная сборочная система предназначена для сборки прошивко ОВЕН ПЛК3хх, СПК2хх.
 
+Для начала работы прочитайте файл INSTALL.
+Текущий пользователь должен иметь доступ на запись в каталог сборочной системы.
+Свободного места не менее 500 Мб
+Права root не требуются. Рекомендуемые ОС - Debian,Ubuntu LTS
 
-WARNING!!!
-
-Do not run any of the following commands from the root account.
-You can destroy your build server due to accidental misconfiguration.
-All you need is write permission to output directories 
-(and a little love, sure ;) ). See INSTALL for details.
-You're warned!
-
-You'll get all required tarballs automatically from the Internet.
-
-Please feed suggestions
-
-WBR,
-Oleg Oleshko (h2o)
+Удачи
